@@ -24,10 +24,62 @@ function getFirst(el, ns, tag) {
     return el ? el.getElementsByTagNameNS(ns, tag)[0] || null : null;
 }
 
+// ====== Flatten paragraph children (unwrap mc:AlternateContent, w:ins, w:del, w:sdt, etc.) ======
+function flattenParaChildren(parentEl) {
+    const result = [];
+    for (const child of parentEl.childNodes) {
+        if (child.nodeType !== 1) continue;
+        const ln = child.localName;
+        const ns = child.namespaceURI;
+
+        // mc:AlternateContent — prefer mc:Choice that contains OMML, else mc:Fallback
+        if (ln === 'AlternateContent') {
+            let chosen = null;
+            for (const mc of child.childNodes) {
+                if (mc.nodeType !== 1) continue;
+                if (mc.localName === 'Choice') {
+                    // Check if Choice has OMML math
+                    if (mc.getElementsByTagNameNS(M_NS, 'oMath').length > 0 ||
+                        mc.getElementsByTagNameNS(M_NS, 'oMathPara').length > 0) {
+                        chosen = mc;
+                        break;
+                    }
+                }
+            }
+            if (!chosen) {
+                for (const mc of child.childNodes) {
+                    if (mc.nodeType === 1 && mc.localName === 'Fallback') { chosen = mc; break; }
+                }
+            }
+            if (!chosen) {
+                for (const mc of child.childNodes) {
+                    if (mc.nodeType === 1 && mc.localName === 'Choice') { chosen = mc; break; }
+                }
+            }
+            if (chosen) result.push(...flattenParaChildren(chosen));
+            continue;
+        }
+
+        // Wrapper elements — recurse into their children
+        if ((ln === 'ins' || ln === 'del' || ln === 'moveTo' || ln === 'moveFrom') && ns === W_NS) {
+            result.push(...flattenParaChildren(child));
+            continue;
+        }
+        if (ln === 'sdt' && ns === W_NS) {
+            const content = getFirst(child, W_NS, 'sdtContent');
+            if (content) result.push(...flattenParaChildren(content));
+            continue;
+        }
+
+        result.push(child);
+    }
+    return result;
+}
+
 // ====== Text extraction ======
 function getParaText(pEl) {
     let text = '';
-    for (const child of pEl.childNodes) {
+    for (const child of flattenParaChildren(pEl)) {
         if (child.nodeType !== 1) continue;
         const ln = child.localName;
         if (ln === 'r' && child.namespaceURI === W_NS) {
@@ -60,7 +112,7 @@ function hasUnderline(pEl) {
 // ====== Convert paragraph to HTML ======
 function paraToHtml(pEl, imageMap) {
     const parts = [];
-    for (const child of pEl.childNodes) {
+    for (const child of flattenParaChildren(pEl)) {
         if (child.nodeType !== 1) continue;
         const localName = child.localName;
 

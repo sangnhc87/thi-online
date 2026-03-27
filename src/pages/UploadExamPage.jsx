@@ -454,7 +454,7 @@ export default function UploadExamPage() {
                 <div className="ee-left">
                     <div className="ee-left-tabs">
                         <button className={'ee-tab' + (leftTab === 'edit' ? ' active' : '')} onClick={() => setLeftTab('edit')}>
-                            <i className="bi bi-pencil-square"></i> Chỉnh sửa
+                            <i className="bi bi-list-ol"></i> Danh sách
                         </button>
                         <button className={'ee-tab' + (leftTab === 'source' ? ' active' : '')} onClick={() => setLeftTab('source')}>
                             <i className="bi bi-code-slash"></i> Mã nguồn
@@ -468,7 +468,7 @@ export default function UploadExamPage() {
                                     return (
                                         <div key={i} ref={el => editorRefs.current[i] = el}
                                             className={'eq-card' + (activeQ === i ? ' active' : '') + (issues.length ? ' has-issues' : ' valid')}
-                                            onClick={() => { setActiveQ(i); previewRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
+                                            onClick={() => { setEditingQ(i); setActiveQ(i); previewRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
                                             <div className="eq-header">
                                                 <span className="eq-num">Câu {q.number}</span>
                                                 <span className="eq-type-badge" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
@@ -478,9 +478,6 @@ export default function UploadExamPage() {
                                                     ? <i className="bi bi-check-circle-fill eq-valid-icon"></i>
                                                     : <i className="bi bi-exclamation-triangle-fill eq-issue-icon" title={issues.join(', ')}></i>}
                                                 <div className="eq-actions">
-                                                    <button className="eq-btn primary" onClick={e => { e.stopPropagation(); setEditingQ(i); setActiveQ(i); }} title="Chỉnh sửa">
-                                                        <i className="bi bi-pencil"></i>
-                                                    </button>
                                                     <button className="eq-btn danger" onClick={e => { e.stopPropagation(); deleteQuestion(i); }} title="Xóa">
                                                         <i className="bi bi-trash3"></i>
                                                     </button>
