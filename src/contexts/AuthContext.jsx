@@ -107,7 +107,9 @@ export function AuthProvider({ children }) {
 
     // Subscription helpers
     const isSubscriptionActive = () => {
-        if (!userProfile || userProfile.role !== 'teacher') return false;
+        if (!userProfile) return false;
+        if (userProfile.role === 'admin') return true;
+        if (userProfile.role !== 'teacher') return false;
         const status = userProfile.teacherStatus;
         if (status === 'trial') return true;
         if (status === 'active') {

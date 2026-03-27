@@ -1,19 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
-import { parseDocx } from '../utils/docxParser';
+import { parseDocx, questionsToText, parseText } from '../utils/docxParser';
 
 const TYPE_LABELS = { mcq: 'Trắc nghiệm', tf: 'Đúng/Sai', short_answer: 'Tự luận ngắn', essay: 'Tự luận' };
+const TYPE_COLORS = {
+    mcq: { bg: '#dbeafe', color: '#1e40af' },
+    tf: { bg: '#fef3c7', color: '#92400e' },
+    short_answer: { bg: '#d1fae5', color: '#065f46' },
+    essay: { bg: '#f3e8ff', color: '#6b21a8' },
+};
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export default function UploadExamPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
-    const [file, setFile] = useState(null);
+
     const [title, setTitle] = useState('');
     const [subject, setSubject] = useState('');
     const [grade, setGrade] = useState('');
@@ -22,361 +29,500 @@ export default function UploadExamPage() {
     const [shuffleQuestions, setShuffleQuestions] = useState(true);
     const [shuffleChoices, setShuffleChoices] = useState(false);
     const [showResult, setShowResult] = useState(true);
-    const [processing, setProcessing] = useState(false);
+
+    const [file, setFile] = useState(null);
+    const [parsing, setParsing] = useState(false);
+    const [questions, setQuestions] = useState(null);
+    const [imageFiles, setImageFiles] = useState([]);
+    const [imageMap, setImageMap] = useState({});
+    const [activeQ, setActiveQ] = useState(0);
+    const [editingQ, setEditingQ] = useState(-1);
+    const [leftTab, setLeftTab] = useState('edit');
+    const [sourceText, setSourceText] = useState('');
     const [saving, setSaving] = useState(false);
-    const [showGuide, setShowGuide] = useState(false);
-    const [preview, setPreview] = useState(null); // { questions, imageFiles }
+    const [showSettings, setShowSettings] = useState(false);
 
-    // Step 1: Parse DOCX client-side
-    const handleParse = async () => {
-        if (!file) {
-            Swal.fire('Chưa chọn file', 'Vui lòng chọn file DOCX trước.', 'warning');
-            return;
-        }
-        setProcessing(true);
-        setPreview(null);
+    const previewRefs = useRef([]);
+    const editorRefs = useRef([]);
+
+    const handleParse = useCallback(async (f) => {
+        if (!f) return;
+        setParsing(true);
         try {
-            Swal.fire({
-                title: 'Đang phân tích file...',
-                html: '<p>Đọc cấu trúc DOCX, trích xuất câu hỏi + hình ảnh...</p>',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading(),
-            });
-            const result = await parseDocx(file);
-            Swal.close();
-
+            const result = await parseDocx(f);
             if (result.questions.length === 0) {
-                Swal.fire('Không tìm thấy câu hỏi', 'Hãy kiểm tra lại file DOCX. Mỗi câu phải bắt đầu bằng "Câu 1:", "Câu 2:",...', 'warning');
+                Swal.fire('Không tìm thấy câu hỏi', 'Mỗi câu phải bắt đầu bằng "Câu 1:", "Câu 2:",...', 'warning');
+                setParsing(false);
                 return;
             }
-
-            setPreview(result);
-        } catch (error) {
-            console.error('Parse error:', error);
-            Swal.fire('Lỗi đọc file', error.message, 'error');
+            setQuestions(result.questions);
+            setImageFiles(result.imageFiles);
+            setImageMap(result.imageMap);
+            setSourceText(questionsToText(result.questions));
+        } catch (err) {
+            console.error(err);
+            Swal.fire('Lỗi đọc file', err.message, 'error');
         } finally {
-            setProcessing(false);
+            setParsing(false);
         }
-    };
+    }, []);
 
-    // Step 2: Save to Firestore
-    const handleSave = async (e) => {
-        e.preventDefault();
-        if (!preview || !title.trim()) {
-            Swal.fire('Thiếu thông tin', 'Vui lòng nhập tiêu đề và xử lý file trước.', 'warning');
+    const handleFileChange = useCallback((f) => {
+        if (!f) return;
+        setFile(f);
+        setQuestions(null);
+        setEditingQ(-1);
+        handleParse(f);
+    }, [handleParse]);
+
+    const updateQ = useCallback((idx, updates) => {
+        setQuestions(prev => prev.map((q, i) => {
+            if (i !== idx) return q;
+            const updated = { ...q, ...updates };
+            if ('content_text' in updates) updated.content_html = escHtml(updates.content_text);
+            if ('explanation' in updates) updated.explanation_html = updates.explanation ? escHtml(updates.explanation) : null;
+            return updated;
+        }));
+    }, []);
+
+    const updateChoice = useCallback((qIdx, cIdx, updates) => {
+        setQuestions(prev => prev.map((q, i) => {
+            if (i !== qIdx) return q;
+            const choices = q.choices.map((c, j) => {
+                if (j !== cIdx) return c;
+                const u = { ...c, ...updates };
+                if ('text' in updates) u.html = escHtml(updates.text);
+                return u;
+            });
+            return { ...q, choices };
+        }));
+    }, []);
+
+    const setCorrectAnswer = useCallback((qIdx, answer) => {
+        setQuestions(prev => prev.map((q, i) => i === qIdx ? { ...q, correct_answer: answer } : q));
+    }, []);
+
+    const addChoice = useCallback((qIdx) => {
+        setQuestions(prev => prev.map((q, i) => {
+            if (i !== qIdx) return q;
+            const nextLetter = LETTERS[q.choices.length] || String(q.choices.length + 1);
+            return { ...q, choices: [...q.choices, { letter: nextLetter, text: '', html: '' }] };
+        }));
+    }, []);
+
+    const removeChoice = useCallback((qIdx, cIdx) => {
+        setQuestions(prev => prev.map((q, i) => {
+            if (i !== qIdx) return q;
+            const choices = q.choices.filter((_, j) => j !== cIdx);
+            let correct = q.correct_answer;
+            if (q.type === 'mcq' && correct === q.choices[cIdx]?.letter) correct = null;
+            return { ...q, choices, correct_answer: correct };
+        }));
+    }, []);
+
+    const deleteQuestion = useCallback((idx) => {
+        setQuestions(prev => {
+            const updated = prev.filter((_, i) => i !== idx);
+            return updated.map((q, i) => ({ ...q, number: i + 1 }));
+        });
+        if (activeQ >= idx && activeQ > 0) setActiveQ(prev => prev - 1);
+        if (editingQ === idx) setEditingQ(-1);
+    }, [activeQ, editingQ]);
+
+    const changeType = useCallback((idx, newType) => {
+        updateQ(idx, { type: newType });
+    }, [updateQ]);
+
+    const applySource = useCallback(() => {
+        const parsed = parseText(sourceText);
+        if (parsed.length === 0) {
+            Swal.fire('Không tìm thấy câu hỏi', 'Định dạng không hợp lệ.', 'warning');
             return;
         }
+        setQuestions(parsed);
+        setEditingQ(-1);
+        Swal.fire({ icon: 'success', title: 'Đã cập nhật ' + parsed.length + ' câu', timer: 1500, showConfirmButton: false });
+    }, [sourceText]);
 
+    useEffect(() => {
+        if (leftTab === 'source' && questions) setSourceText(questionsToText(questions));
+    }, [leftTab]);
+
+    const getIssues = useCallback((q) => {
+        const issues = [];
+        if (!q.content_text?.trim()) issues.push('Thiếu nội dung');
+        if (q.type === 'mcq' && q.choices.length < 2) issues.push('Cần ≥ 2 đáp án');
+        if (q.type === 'mcq' && !q.correct_answer) issues.push('Chưa chọn đáp án đúng');
+        if (q.type === 'tf' && !q.correct_answer) issues.push('Chưa đánh dấu Đ/S');
+        if (q.type === 'short_answer' && !q.correct_answer) issues.push('Thiếu đáp án');
+        return issues;
+    }, []);
+
+    const stats = useMemo(() => {
+        if (!questions) return null;
+        const total = questions.length;
+        const byType = {};
+        let valid = 0;
+        for (const q of questions) {
+            byType[q.type] = (byType[q.type] || 0) + 1;
+            if (getIssues(q).length === 0) valid++;
+        }
+        return { total, byType, valid, invalid: total - valid };
+    }, [questions, getIssues]);
+
+    const scrollToPreview = (idx) => {
+        setActiveQ(idx);
+        previewRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    const handleSave = async () => {
+        if (!title.trim()) {
+            Swal.fire('Thiếu tiêu đề', 'Nhập tiêu đề đề thi trước khi lưu.', 'warning');
+            setShowSettings(true);
+            return;
+        }
+        if (!questions?.length) return;
         setSaving(true);
         try {
-            Swal.fire({
-                title: 'Đang lưu đề thi...',
-                html: '<p>Tải hình ảnh lên Storage và lưu câu hỏi...</p>',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading(),
-            });
-
-            // Upload images to Firebase Storage, get real URLs
-            const storageUrlMap = {}; // dataURL → storageURL
-            if (preview.imageFiles?.length > 0) {
-                for (const img of preview.imageFiles) {
-                    const imgRef = ref(storage, `exams/${user.uid}/${Date.now()}_${img.name}`);
+            Swal.fire({ title: 'Đang lưu đề thi...', html: '<p>Tải hình ảnh & lưu câu hỏi...</p>', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            const storageUrlMap = {};
+            if (imageFiles?.length > 0) {
+                for (const img of imageFiles) {
+                    const imgRef = ref(storage, 'exams/' + user.uid + '/' + Date.now() + '_' + img.name);
                     await uploadBytes(imgRef, img.blob, { contentType: img.mime });
                     const url = await getDownloadURL(imgRef);
-                    const dataUrl = preview.imageMap[img.rId];
+                    const dataUrl = imageMap[img.rId];
                     if (dataUrl) storageUrlMap[dataUrl] = url;
                 }
             }
-
-            // Replace data URLs with Storage URLs in question HTML
-            const replaceDataUrls = (html) => {
+            const replUrls = (html) => {
                 if (!html) return html;
-                for (const [dataUrl, storageUrl] of Object.entries(storageUrlMap)) {
-                    html = html.replaceAll(dataUrl, storageUrl);
-                }
+                for (const [d, s] of Object.entries(storageUrlMap)) html = html.replaceAll(d, s);
                 return html;
             };
-
-            const questions = preview.questions.map((q, idx) => ({
-                number: q.number,
-                type: q.type,
-                content_text: q.content_text,
-                content_html: replaceDataUrls(q.content_html),
-                choices: (q.choices || []).map(c => ({
-                    letter: c.letter,
-                    text: c.text,
-                    html: replaceDataUrls(c.html),
-                })),
+            const qs = questions.map((q, idx) => ({
+                number: q.number, type: q.type,
+                content_text: q.content_text, content_html: replUrls(q.content_html),
+                choices: (q.choices || []).map(c => ({ letter: c.letter, text: c.text, html: replUrls(c.html) })),
                 correct_answer: q.correct_answer,
-                explanation: q.explanation,
-                explanation_html: replaceDataUrls(q.explanation_html),
+                explanation: q.explanation, explanation_html: replUrls(q.explanation_html),
                 order: idx + 1,
             }));
-
             const examRef = await addDoc(collection(db, 'exams'), {
-                title: title.trim(),
-                subject: subject.trim() || null,
-                grade: grade.trim() || null,
-                teacherId: user.uid,
-                teacherName: user.displayName,
-                duration: Number(duration),
-                questionCount: questions.length,
-                maxAttempts: Number(maxAttempts),
-                shuffleQuestions,
-                shuffleChoices,
-                showResult,
-                status: 'draft',
-                createdAt: Timestamp.now(),
+                title: title.trim(), subject: subject.trim() || null, grade: grade.trim() || null,
+                teacherId: user.uid, teacherName: user.displayName,
+                duration: Number(duration), questionCount: qs.length, maxAttempts: Number(maxAttempts),
+                shuffleQuestions, shuffleChoices, showResult,
+                status: 'draft', createdAt: Timestamp.now(),
             });
-
-            await Promise.all(questions.map(q => addDoc(collection(db, 'exams', examRef.id, 'questions'), q)));
-
+            await Promise.all(qs.map(q => addDoc(collection(db, 'exams', examRef.id, 'questions'), q)));
             Swal.fire({
-                icon: 'success',
-                title: 'Tải lên thành công!',
-                html: `<p>Đã tạo đề "<b>${title}</b>" với <b>${questions.length}</b> câu hỏi.</p><p style="color:#9ca3af;font-size:0.85rem">Đề ở trạng thái Nháp. Vào Chi tiết để kích hoạt.</p>`,
+                icon: 'success', title: 'Tạo đề thành công!',
+                html: '<b>' + title + '</b> — ' + qs.length + ' câu hỏi<br><small style="color:#888">Trạng thái: Nháp</small>',
                 confirmButtonColor: '#5b5ea6',
             });
             navigate('/teacher');
-        } catch (error) {
-            console.error('Save error:', error);
-            Swal.fire('Lỗi lưu đề', error.message, 'error');
+        } catch (err) {
+            console.error(err);
+            Swal.fire('Lỗi', err.message, 'error');
         } finally {
             setSaving(false);
         }
     };
 
+    // ═══ STEP 1: Upload ═══
+    if (!questions) {
+        return (
+            <div className="upload-step">
+                <div className="upload-step-inner">
+                    <div className="upload-hero">
+                        <i className="bi bi-file-earmark-word-fill"></i>
+                        <h1>Tạo đề thi từ DOCX</h1>
+                        <p>Chọn file Word (.docx) để tự động phân tích câu hỏi, đáp án, lời giải</p>
+                    </div>
+                    <div className="upload-dropzone"
+                        onClick={() => document.getElementById('file-input').click()}
+                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                        onDragLeave={e => e.currentTarget.classList.remove('dragover')}
+                        onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.docx')) handleFileChange(f); }}>
+                        {parsing ? (
+                            <div className="upload-parsing">
+                                <span className="spinner" style={{ width: 40, height: 40 }}></span>
+                                <p style={{ marginTop: 16, fontWeight: 600 }}>Đang phân tích <b>{file?.name}</b>...</p>
+                                <small style={{ color: 'var(--text-muted)' }}>Trích xuất câu hỏi, đáp án, hình ảnh</small>
+                            </div>
+                        ) : (
+                            <>
+                                <i className="bi bi-cloud-arrow-up-fill"></i>
+                                <p className="upload-main-text">{file ? file.name : 'Kéo thả file .docx vào đây'}</p>
+                                <span className="upload-sub-text">hoặc bấm để chọn file</span>
+                            </>
+                        )}
+                    </div>
+                    <input id="file-input" type="file" accept=".docx"
+                        onChange={e => { if (e.target.files[0]) handleFileChange(e.target.files[0]); }}
+                        style={{ display: 'none' }} />
+                    <div className="upload-format-info">
+                        <h4><i className="bi bi-info-circle"></i> Định dạng chuẩn</h4>
+                        <div className="format-cols">
+                            <div className="format-col">
+                                <h5>Trắc nghiệm</h5>
+                                <pre>{'Câu 1: Nội dung\nA. Đáp án A\nB. Đáp án B (gạch chân)\nC. Đáp án C\nD. Đáp án D'}</pre>
+                            </div>
+                            <div className="format-col">
+                                <h5>Đúng/Sai</h5>
+                                <pre>{'Câu 2: Nội dung\na) Mệnh đề 1 (gạch chân=Đ)\nb) Mệnh đề 2\nc) Mệnh đề 3\nd) Mệnh đề 4'}</pre>
+                            </div>
+                            <div className="format-col">
+                                <h5>Tự luận ngắn</h5>
+                                <pre>{'Câu 3: Nội dung\nĐáp án: 42\nLời giải: Chi tiết...'}</pre>
+                            </div>
+                        </div>
+                        <small><b>Đáp án đúng:</b> Gạch chân trong Word hoặc dòng "Đáp án: X"</small>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ═══ STEP 2: Split-pane Editor ═══
     return (
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h1 style={{ fontSize: '1.5rem', marginBottom: 24 }}>
-                <i className="bi bi-cloud-arrow-up me-2" style={{ color: 'var(--accent)' }}></i>
-                Tải lên đề thi
-            </h1>
-
-            <form onSubmit={handleSave}>
-                {/* Basic info */}
-                <div className="card" style={{ marginBottom: 20 }}>
-                    <div className="card-header-gradient">
-                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}><i className="bi bi-info-circle me-2"></i>Thông tin cơ bản</h3>
-                    </div>
-                    <div className="card-body">
-                        <div className="form-group">
-                            <label className="form-label">Tiêu đề đề thi *</label>
-                            <input type="text" className="form-input" placeholder="VD: Kiểm tra Toán 12 — HK1" value={title} onChange={e => setTitle(e.target.value)} required />
-                        </div>
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label className="form-label">Môn học</label>
-                                <select className="form-select" value={subject} onChange={e => setSubject(e.target.value)}>
-                                    <option value="">Chọn môn</option>
-                                    <option>Toán</option><option>Vật lý</option><option>Hóa học</option>
-                                    <option>Sinh học</option><option>Tiếng Anh</option><option>Ngữ văn</option>
-                                    <option>Lịch sử</option><option>Địa lý</option><option>GDCD</option>
-                                    <option>Tin học</option><option>Khác</option>
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Khối lớp</label>
-                                <select className="form-select" value={grade} onChange={e => setGrade(e.target.value)}>
-                                    <option value="">Chọn lớp</option>
-                                    {[10, 11, 12].map(g => <option key={g}>Lớp {g}</option>)}
-                                    <option>Đại học</option><option>Khác</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
+        <div className="exam-editor">
+            <div className="ee-header">
+                <div className="ee-header-left">
+                    <button className="btn btn-sm btn-ghost" onClick={() => { setQuestions(null); setFile(null); setEditingQ(-1); }} title="Quay lại">
+                        <i className="bi bi-arrow-left"></i>
+                    </button>
+                    <input type="text" className="ee-title-input" placeholder="Nhập tiêu đề đề thi..." value={title} onChange={e => setTitle(e.target.value)} />
                 </div>
-
-                {/* Settings */}
-                <div className="card" style={{ marginBottom: 20 }}>
-                    <div className="card-header-gradient" style={{ background: 'var(--gradient-cool)' }}>
-                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}><i className="bi bi-gear me-2"></i>Cài đặt bài thi</h3>
-                    </div>
-                    <div className="card-body">
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label className="form-label">Thời gian (phút) *</label>
-                                <input type="number" className="form-input" min="1" max="180" value={duration} onChange={e => setDuration(e.target.value)} required />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Số lần thi tối đa</label>
-                                <input type="number" className="form-input" min="1" max="10" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} />
-                            </div>
-                        </div>
-
-                        <div className="toggle-group">
-                            <label className="toggle-label">
-                                <input type="checkbox" checked={shuffleQuestions} onChange={e => setShuffleQuestions(e.target.checked)} />
-                                <span className="toggle-switch"></span>
-                                <span>Xáo trộn thứ tự câu hỏi</span>
-                            </label>
-                            <label className="toggle-label">
-                                <input type="checkbox" checked={shuffleChoices} onChange={e => setShuffleChoices(e.target.checked)} />
-                                <span className="toggle-switch"></span>
-                                <span>Xáo trộn thứ tự đáp án</span>
-                            </label>
-                            <label className="toggle-label">
-                                <input type="checkbox" checked={showResult} onChange={e => setShowResult(e.target.checked)} />
-                                <span className="toggle-switch"></span>
-                                <span>Hiện kết quả chi tiết sau khi nộp</span>
-                            </label>
-                        </div>
-                    </div>
+                <div className="ee-header-right">
+                    <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(!showSettings)} title="Cài đặt">
+                        <i className="bi bi-gear"></i> Cài đặt
+                    </button>
+                    <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !title.trim()}>
+                        {saving ? <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> Lưu...</> : <><i className="bi bi-check-lg"></i> Lưu đề thi</>}
+                    </button>
                 </div>
+            </div>
 
-                {/* File upload */}
-                <div className="card" style={{ marginBottom: 20 }}>
-                    <div className="card-header-gradient" style={{ background: 'var(--gradient-success)' }}>
-                        <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}><i className="bi bi-file-earmark-word me-2"></i>File đề thi</h3>
+            <AnimatePresence>
+                {showSettings && (
+                    <motion.div className="ee-settings" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
+                        <div className="ee-settings-grid">
+                            <label>Môn <select className="form-select-sm" value={subject} onChange={e => setSubject(e.target.value)}>
+                                <option value="">—</option><option>Toán</option><option>Vật lý</option><option>Hóa học</option>
+                                <option>Sinh học</option><option>Tiếng Anh</option><option>Ngữ văn</option><option>Lịch sử</option>
+                                <option>Địa lý</option><option>GDCD</option><option>Tin học</option><option>Khác</option>
+                            </select></label>
+                            <label>Lớp <select className="form-select-sm" value={grade} onChange={e => setGrade(e.target.value)}>
+                                <option value="">—</option>{[10,11,12].map(g => <option key={g}>Lớp {g}</option>)}<option>Đại học</option>
+                            </select></label>
+                            <label>Thời gian <input type="number" className="form-input-sm" min="1" max="180" value={duration} onChange={e => setDuration(e.target.value)} /> phút</label>
+                            <label>Số lần thi <input type="number" className="form-input-sm" min="1" max="10" value={maxAttempts} onChange={e => setMaxAttempts(e.target.value)} /></label>
+                            <label className="ee-toggle"><input type="checkbox" checked={shuffleQuestions} onChange={e => setShuffleQuestions(e.target.checked)} /> Xáo câu hỏi</label>
+                            <label className="ee-toggle"><input type="checkbox" checked={shuffleChoices} onChange={e => setShuffleChoices(e.target.checked)} /> Xáo đáp án</label>
+                            <label className="ee-toggle"><input type="checkbox" checked={showResult} onChange={e => setShowResult(e.target.checked)} /> Hiện kết quả</label>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {stats && (
+                <div className="ee-stats">
+                    <span className="ee-stat total"><i className="bi bi-list-ol"></i> {stats.total} câu</span>
+                    {Object.entries(stats.byType).map(([type, count]) => (
+                        <span key={type} className="ee-stat" style={{ background: TYPE_COLORS[type]?.bg, color: TYPE_COLORS[type]?.color }}>
+                            {TYPE_LABELS[type]} {count}
+                        </span>
+                    ))}
+                    <span className="ee-stat valid"><i className="bi bi-check-circle"></i> {stats.valid} hợp lệ</span>
+                    {stats.invalid > 0 && <span className="ee-stat invalid"><i className="bi bi-exclamation-triangle"></i> {stats.invalid} cần sửa</span>}
+                </div>
+            )}
+
+            <div className="ee-body">
+                <div className="ee-left">
+                    <div className="ee-left-tabs">
+                        <button className={'ee-tab' + (leftTab === 'edit' ? ' active' : '')} onClick={() => setLeftTab('edit')}>
+                            <i className="bi bi-pencil-square"></i> Chỉnh sửa
+                        </button>
+                        <button className={'ee-tab' + (leftTab === 'source' ? ' active' : '')} onClick={() => setLeftTab('source')}>
+                            <i className="bi bi-code-slash"></i> Mã nguồn
+                        </button>
                     </div>
-                    <div className="card-body">
-                        <div className="file-upload-area" onClick={() => document.getElementById('file-input').click()}>
-                            <i className="bi bi-cloud-arrow-up" style={{ fontSize: '2.5rem', color: 'var(--accent-light)' }}></i>
-                            <p style={{ fontWeight: 600, margin: '8px 0 4px' }}>
-                                {file ? file.name : 'Kéo thả hoặc bấm để chọn file'}
-                            </p>
-                            <small style={{ color: 'var(--text-muted)' }}>Chỉ chấp nhận file .docx</small>
-                        </div>
-                        <input id="file-input" type="file" accept=".docx" onChange={e => { setFile(e.target.files[0]); setPreview(null); }} style={{ display: 'none' }} />
-
-                        <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <button type="button" className="btn btn-accent" disabled={!file || processing} onClick={handleParse}
-                                style={{ minWidth: 160, background: 'var(--gradient-success)', color: '#fff', border: 'none' }}>
-                                {processing ? (
-                                    <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }}></span> Đang xử lý...</>
-                                ) : (
-                                    <><i className="bi bi-eye"></i> Xem trước đề thi</>
-                                )}
-                            </button>
-                            <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowGuide(!showGuide)}>
-                                <i className={`bi bi-${showGuide ? 'chevron-up' : 'chevron-down'}`}></i>
-                                Hướng dẫn soạn đề
-                            </button>
-                        </div>
-
-                        {showGuide && (
-                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="format-guide">
-                                <h4>Cấu trúc chuẩn soạn đề DOCX:</h4>
-                                <div className="code-block">
-{`Câu 1: Nội dung câu hỏi ở đây.
-A. Đáp án A
-B. Đáp án B (gạch chân = đúng)
-C. Đáp án C
-D. Đáp án D
-
-Câu 2: Câu hỏi Đúng/Sai
-a) Mệnh đề 1 (gạch chân = Đúng)
-b) Mệnh đề 2
-c) Mệnh đề 3
-d) Mệnh đề 4
-
-Câu 3: Công thức $x^2 + y^2 = r^2$
-A. 1
-B. 2
-C. 3
-D. 4
-Đáp án: B
-Lời giải: Đây là giải thích chi tiết.`}
-                                </div>
-                                <h4>Quy tắc:</h4>
-                                <ul>
-                                    <li><b>Câu hỏi:</b> Bắt đầu bằng "Câu 1:", "Câu 2:",...</li>
-                                    <li><b>Trắc nghiệm:</b> A. B. C. D. — <u>gạch chân</u> đáp án đúng trong Word</li>
-                                    <li><b>Đúng/Sai:</b> a) b) c) d) — <u>gạch chân</u> mệnh đề đúng</li>
-                                    <li><b>Tự luận ngắn:</b> Dùng "Đáp án: ..." (không có A.B.C.D.)</li>
-                                    <li><b>Lời giải:</b> Dòng "Lời giải: ..." sau đáp án (tuỳ chọn)</li>
-                                    <li><b>Hình ảnh:</b> Chèn trực tiếp trong DOCX, tự trích xuất</li>
-                                    <li><b>Định dạng:</b> In đậm, nghiêng, gạch chân giữ nguyên</li>
-                                </ul>
-                            </motion.div>
+                    <div className="ee-left-content">
+                        {leftTab === 'edit' ? (
+                            <div className="ee-question-list">
+                                {questions.map((q, i) => {
+                                    const issues = getIssues(q);
+                                    const isEditing = editingQ === i;
+                                    const isActive = activeQ === i;
+                                    return (
+                                        <div key={i} ref={el => editorRefs.current[i] = el}
+                                            className={'eq-card' + (isActive ? ' active' : '') + (issues.length ? ' has-issues' : ' valid')}
+                                            onClick={() => scrollToPreview(i)}>
+                                            <div className="eq-header">
+                                                <span className="eq-num">Câu {q.number}</span>
+                                                <span className="eq-type-badge" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
+                                                    {TYPE_LABELS[q.type]}
+                                                </span>
+                                                {issues.length === 0
+                                                    ? <i className="bi bi-check-circle-fill eq-valid-icon"></i>
+                                                    : <i className="bi bi-exclamation-triangle-fill eq-issue-icon" title={issues.join(', ')}></i>}
+                                                <div className="eq-actions">
+                                                    <button className="eq-btn" onClick={e => { e.stopPropagation(); setEditingQ(isEditing ? -1 : i); }} title={isEditing ? 'Thu gọn' : 'Sửa'}>
+                                                        <i className={'bi bi-' + (isEditing ? 'chevron-up' : 'pencil')}></i>
+                                                    </button>
+                                                    <button className="eq-btn danger" onClick={e => { e.stopPropagation(); deleteQuestion(i); }} title="Xóa">
+                                                        <i className="bi bi-trash3"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {!isEditing && (
+                                                <div className="eq-compact">
+                                                    <p className="eq-preview-text">{(q.content_text || '').slice(0, 120)}{(q.content_text || '').length > 120 ? '...' : ''}</p>
+                                                    {q.choices.length > 0 && (
+                                                        <div className="eq-choices-inline">
+                                                            {q.choices.map((c, j) => (
+                                                                <span key={j} className={'eq-choice-pill' + (q.correct_answer === c.letter ? ' correct' : '')}>
+                                                                    {q.type === 'tf' ? c.letter + ')' : c.letter + '.'} {(c.text || '').slice(0, 25)}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {issues.length > 0 && <div className="eq-issues">{issues.map((iss, j) => <span key={j}>⚠ {iss}</span>)}</div>}
+                                                </div>
+                                            )}
+                                            {isEditing && (
+                                                <div className="eq-edit" onClick={e => e.stopPropagation()}>
+                                                    <div className="eq-field"><label>Loại:</label>
+                                                        <select value={q.type} onChange={e => changeType(i, e.target.value)} className="form-select-sm">
+                                                            <option value="mcq">Trắc nghiệm</option><option value="tf">Đúng/Sai</option><option value="short_answer">Tự luận ngắn</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="eq-field"><label>Nội dung:</label>
+                                                        <textarea value={q.content_text || ''} onChange={e => updateQ(i, { content_text: e.target.value })}
+                                                            rows={Math.min(6, (q.content_text || '').split('\n').length + 1)} className="eq-textarea" />
+                                                    </div>
+                                                    {(q.type === 'mcq' || q.type === 'tf') && (
+                                                        <div className="eq-field"><label>Đáp án:</label>
+                                                            {q.choices.map((c, j) => (
+                                                                <div key={j} className="eq-choice-row">
+                                                                    {q.type === 'mcq' ? (
+                                                                        <input type="radio" name={'correct-' + i} checked={q.correct_answer === c.letter}
+                                                                            onChange={() => setCorrectAnswer(i, c.letter)} />
+                                                                    ) : (
+                                                                        <label className="eq-tf-toggle">
+                                                                            <input type="checkbox"
+                                                                                checked={q.correct_answer ? q.correct_answer[j] === 'D' : false}
+                                                                                onChange={e => {
+                                                                                    const arr = (q.correct_answer || 'SSSS').split('');
+                                                                                    arr[j] = e.target.checked ? 'D' : 'S';
+                                                                                    setCorrectAnswer(i, arr.join(''));
+                                                                                }} />
+                                                                            <span className="eq-tf-label">{q.correct_answer?.[j] === 'D' ? 'Đ' : 'S'}</span>
+                                                                        </label>
+                                                                    )}
+                                                                    <span className="eq-choice-letter">{q.type === 'tf' ? c.letter + ')' : c.letter + '.'}</span>
+                                                                    <input type="text" value={c.text || ''} onChange={e => updateChoice(i, j, { text: e.target.value })}
+                                                                        className="eq-choice-input" placeholder="Nội dung đáp án..." />
+                                                                    <button className="eq-btn-x" onClick={() => removeChoice(i, j)}>×</button>
+                                                                </div>
+                                                            ))}
+                                                            <button className="eq-add-choice" onClick={() => addChoice(i)}>
+                                                                <i className="bi bi-plus"></i> Thêm đáp án
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {q.type === 'short_answer' && (
+                                                        <div className="eq-field"><label>Đáp án:</label>
+                                                            <input type="text" value={q.correct_answer || ''} onChange={e => setCorrectAnswer(i, e.target.value)}
+                                                                className="eq-input" placeholder="Nhập đáp án..." />
+                                                        </div>
+                                                    )}
+                                                    <div className="eq-field"><label>Lời giải (tuỳ chọn):</label>
+                                                        <textarea value={q.explanation || ''} onChange={e => updateQ(i, { explanation: e.target.value })}
+                                                            rows={2} className="eq-textarea" placeholder="Giải thích chi tiết..." />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="ee-source">
+                                <textarea className="ee-source-textarea" value={sourceText} onChange={e => setSourceText(e.target.value)} spellCheck={false} />
+                                <button className="btn btn-accent btn-sm" onClick={applySource} style={{ marginTop: 8, width: '100%' }}>
+                                    <i className="bi bi-arrow-repeat"></i> Áp dụng thay đổi
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
 
-                {/* Preview */}
-                {preview && (
-                    <div className="card" style={{ marginBottom: 20 }}>
-                        <div className="card-header-gradient" style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
-                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                                <i className="bi bi-search me-2"></i>
-                                Xem trước — {preview.questions.length} câu hỏi
-                            </h3>
-                        </div>
-                        <div className="card-body" style={{ maxHeight: 500, overflowY: 'auto' }}>
-                            {preview.questions.map((q, i) => (
-                                <div key={i} className="preview-question" style={{
-                                    padding: '14px 16px', marginBottom: 12, borderRadius: 10,
-                                    background: 'var(--bg-card)', border: '1px solid var(--border)',
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                        <strong style={{ color: 'var(--accent)' }}>Câu {q.number}</strong>
-                                        <span style={{
-                                            fontSize: '0.75rem', padding: '2px 10px', borderRadius: 12,
-                                            background: q.type === 'mcq' ? '#dbeafe' : q.type === 'tf' ? '#fef3c7' : '#d1fae5',
-                                            color: q.type === 'mcq' ? '#1e40af' : q.type === 'tf' ? '#92400e' : '#065f46',
-                                            fontWeight: 600,
-                                        }}>
-                                            {TYPE_LABELS[q.type] || q.type}
+                <div className="ee-right">
+                    <div className="ee-right-header">
+                        <i className="bi bi-eye"></i> Xem trước (góc nhìn học sinh)
+                    </div>
+                    <div className="ee-preview-list">
+                        {questions.map((q, i) => {
+                            const issues = getIssues(q);
+                            return (
+                                <div key={i} ref={el => previewRefs.current[i] = el}
+                                    className={'ep-card' + (activeQ === i ? ' active' : '')}
+                                    onClick={() => { setActiveQ(i); editorRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
+                                    <div className="ep-header">
+                                        <span className="ep-num">Câu {q.number}</span>
+                                        <span className="ep-type" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
+                                            {TYPE_LABELS[q.type]}
                                         </span>
                                     </div>
-                                    <div dangerouslySetInnerHTML={{ __html: q.content_html }} style={{ marginBottom: 8 }} />
-
-                                    {q.choices.length > 0 && (
-                                        <div style={{ paddingLeft: 8 }}>
+                                    <div className="ep-content" dangerouslySetInnerHTML={{ __html: q.content_html || escHtml(q.content_text) }} />
+                                    {q.type === 'mcq' && q.choices.length > 0 && (
+                                        <div className="ep-choices">
                                             {q.choices.map((c, j) => (
-                                                <div key={j} style={{
-                                                    padding: '4px 8px', marginBottom: 3, borderRadius: 6,
-                                                    background: q.type === 'mcq' && q.correct_answer === c.letter ? 'rgba(34,197,94,0.12)' : 'transparent',
-                                                    border: q.type === 'mcq' && q.correct_answer === c.letter ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
-                                                }}>
-                                                    <span style={{ fontWeight: 600, marginRight: 6 }}>
-                                                        {q.type === 'tf' ? `${c.letter})` : `${c.letter}.`}
-                                                    </span>
-                                                    <span dangerouslySetInnerHTML={{ __html: c.html }} />
-                                                    {q.type === 'tf' && q.correct_answer && (
-                                                        <span style={{
-                                                            marginLeft: 8, fontSize: '0.75rem', fontWeight: 600,
-                                                            color: q.correct_answer[j] === 'D' ? '#16a34a' : '#dc2626',
-                                                        }}>
-                                                            {q.correct_answer[j] === 'D' ? '✓ Đúng' : '✗ Sai'}
-                                                        </span>
-                                                    )}
+                                                <div key={j} className={'ep-choice' + (q.correct_answer === c.letter ? ' correct' : '')}>
+                                                    <span className="ep-radio">{q.correct_answer === c.letter ? '●' : '○'}</span>
+                                                    <span className="ep-letter">{c.letter}.</span>
+                                                    <span dangerouslySetInnerHTML={{ __html: c.html || escHtml(c.text) }} />
                                                 </div>
                                             ))}
                                         </div>
                                     )}
-
-                                    {q.correct_answer && q.type !== 'tf' && (
-                                        <div style={{ fontSize: '0.85rem', color: '#16a34a', fontWeight: 600, marginTop: 4 }}>
-                                            <i className="bi bi-check-circle me-1"></i>Đáp án: {q.correct_answer}
+                                    {q.type === 'tf' && q.choices.length > 0 && (
+                                        <div className="ep-choices">
+                                            {q.choices.map((c, j) => (
+                                                <div key={j} className={'ep-choice' + (q.correct_answer?.[j] === 'D' ? ' correct' : '')}>
+                                                    <span className={'ep-tf-badge' + (q.correct_answer?.[j] === 'D' ? ' true' : ' false')}>{q.correct_answer?.[j] === 'D' ? 'Đ' : 'S'}</span>
+                                                    <span className="ep-letter">{c.letter})</span>
+                                                    <span dangerouslySetInnerHTML={{ __html: c.html || escHtml(c.text) }} />
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
-                                    {!q.correct_answer && (
-                                        <div style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600, marginTop: 4 }}>
-                                            <i className="bi bi-exclamation-triangle me-1"></i>Chưa có đáp án
-                                        </div>
+                                    {q.type === 'short_answer' && q.correct_answer && (
+                                        <div className="ep-answer"><i className="bi bi-pencil-square"></i> Đáp án: <b>{q.correct_answer}</b></div>
                                     )}
-
                                     {q.explanation_html && (
-                                        <div className="rq-explanation" style={{ marginTop: 8, fontSize: '0.85rem' }}>
-                                            <strong>Lời giải:</strong>
-                                            <span dangerouslySetInnerHTML={{ __html: q.explanation_html }} style={{ marginLeft: 6 }} />
+                                        <div className="ep-explanation">
+                                            <i className="bi bi-lightbulb"></i>
+                                            <span dangerouslySetInnerHTML={{ __html: q.explanation_html }} />
                                         </div>
+                                    )}
+                                    {issues.length > 0 && (
+                                        <div className="ep-issues">{issues.map((iss, j) => <span key={j}>⚠ {iss}</span>)}</div>
                                     )}
                                 </div>
-                            ))}
-                        </div>
+                            );
+                        })}
                     </div>
-                )}
-
-                <button type="submit" className="btn btn-primary btn-lg" disabled={!preview || saving} style={{ width: '100%' }}>
-                    {saving ? (
-                        <><span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></span> Đang lưu...</>
-                    ) : (
-                        <><i className="bi bi-rocket-takeoff"></i> Lưu đề thi ({preview ? preview.questions.length + ' câu' : '...'})</>
-                    )}
-                </button>
-            </form>
+                </div>
+            </div>
         </div>
     );
+}
+
+function escHtml(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
