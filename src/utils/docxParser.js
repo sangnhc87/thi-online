@@ -4,6 +4,7 @@
  * Compatible with tron-de-react DOCX format.
  */
 import JSZip from 'jszip';
+import { ommlToLatex, isDisplayMath } from './ommlToLatex';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -11,6 +12,9 @@ const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const WP_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const PIC_NS = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+const M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+const VML_NS = 'urn:schemas-microsoft-com:vml';
+const O_NS = 'urn:schemas-microsoft-com:office:office';
 
 // ====== XML helpers ======
 function getAll(el, ns, tag) {
@@ -23,9 +27,17 @@ function getFirst(el, ns, tag) {
 // ====== Text extraction ======
 function getParaText(pEl) {
     let text = '';
-    for (const r of getAll(pEl, W_NS, 'r')) {
-        for (const t of getAll(r, W_NS, 't')) {
-            text += t.textContent;
+    for (const child of pEl.childNodes) {
+        if (child.nodeType !== 1) continue;
+        const ln = child.localName;
+        if (ln === 'r' && child.namespaceURI === W_NS) {
+            for (const t of getAll(child, W_NS, 't')) text += t.textContent;
+        } else if (ln === 'hyperlink') {
+            for (const r of getAll(child, W_NS, 'r'))
+                for (const t of getAll(r, W_NS, 't')) text += t.textContent;
+        } else if ((ln === 'oMath' || ln === 'oMathPara') && child.namespaceURI === M_NS) {
+            const latex = ommlToLatex(child);
+            if (latex) text += (ln === 'oMathPara' ? ` $$$${latex}$$$ ` : ` $$${latex}$$ `);
         }
     }
     return text.trim();
@@ -92,6 +104,22 @@ function paraToHtml(pEl, imageMap) {
                 }
             }
 
+            // MathType / OLE objects inside run (w:object → v:shape → v:imagedata)
+            const objects = getAll(child, W_NS, 'object');
+            for (const obj of objects) {
+                // Try to get fallback image from v:shape > v:imagedata
+                const shapes = obj.getElementsByTagNameNS(VML_NS, 'shape');
+                for (const shape of shapes) {
+                    const imgData = shape.getElementsByTagNameNS(VML_NS, 'imagedata');
+                    for (const id of imgData) {
+                        const rId = id.getAttributeNS(R_NS, 'id') || id.getAttribute('r:id') || '';
+                        if (rId && imageMap[rId]) {
+                            runText += `<img src="${imageMap[rId]}" style="max-height:2em;vertical-align:middle;" class="mathtype-img" />`;
+                        }
+                    }
+                }
+            }
+
             if (runText) parts.push(prefix + escapeHtml(runText).replace(/&lt;img /g, '<img ').replace(/&lt;\/img&gt;/g, '') + suffix);
         } else if (localName === 'hyperlink') {
             // Process runs inside hyperlink
@@ -100,15 +128,23 @@ function paraToHtml(pEl, imageMap) {
                 for (const tEl of getAll(r, W_NS, 't')) t += tEl.textContent;
                 parts.push(escapeHtml(t));
             }
+        } else if ((localName === 'oMath' || localName === 'oMathPara') && child.namespaceURI === M_NS) {
+            // OMML equation → LaTeX
+            const latex = ommlToLatex(child);
+            if (latex) {
+                if (localName === 'oMathPara') {
+                    parts.push(`$$$${latex}$$$`);
+                } else {
+                    parts.push(`$$${latex}$$`);
+                }
+            }
         }
     }
     return parts.join('');
 }
 
 function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\$\$\$(.*?)\$\$\$/gs, '<span class="math display">$1</span>')
-        .replace(/\$\$(.*?)\$\$/g, '<span class="math inline">$1</span>');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ====== Main parser ======

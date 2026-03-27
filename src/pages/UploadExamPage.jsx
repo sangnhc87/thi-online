@@ -6,6 +6,8 @@ import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { parseDocx, questionsToText, parseText } from '../utils/docxParser';
 
 const TYPE_LABELS = { mcq: 'Trắc nghiệm', tf: 'Đúng/Sai', short_answer: 'Tự luận ngắn', essay: 'Tự luận' };
@@ -478,14 +480,14 @@ export default function UploadExamPage() {
                                             {TYPE_LABELS[q.type]}
                                         </span>
                                     </div>
-                                    <div className="ep-content" dangerouslySetInnerHTML={{ __html: q.content_html || escHtml(q.content_text) }} />
+                                    <div className="ep-content" dangerouslySetInnerHTML={{ __html: renderLatex(q.content_html || escHtml(q.content_text)) }} />
                                     {q.type === 'mcq' && q.choices.length > 0 && (
                                         <div className="ep-choices">
                                             {q.choices.map((c, j) => (
                                                 <div key={j} className={'ep-choice' + (q.correct_answer === c.letter ? ' correct' : '')}>
                                                     <span className="ep-radio">{q.correct_answer === c.letter ? '●' : '○'}</span>
                                                     <span className="ep-letter">{c.letter}.</span>
-                                                    <span dangerouslySetInnerHTML={{ __html: c.html || escHtml(c.text) }} />
+                                                    <span dangerouslySetInnerHTML={{ __html: renderLatex(c.html || escHtml(c.text)) }} />
                                                 </div>
                                             ))}
                                         </div>
@@ -496,7 +498,7 @@ export default function UploadExamPage() {
                                                 <div key={j} className={'ep-choice' + (q.correct_answer?.[j] === 'D' ? ' correct' : '')}>
                                                     <span className={'ep-tf-badge' + (q.correct_answer?.[j] === 'D' ? ' true' : ' false')}>{q.correct_answer?.[j] === 'D' ? 'Đ' : 'S'}</span>
                                                     <span className="ep-letter">{c.letter})</span>
-                                                    <span dangerouslySetInnerHTML={{ __html: c.html || escHtml(c.text) }} />
+                                                    <span dangerouslySetInnerHTML={{ __html: renderLatex(c.html || escHtml(c.text)) }} />
                                                 </div>
                                             ))}
                                         </div>
@@ -507,7 +509,7 @@ export default function UploadExamPage() {
                                     {q.explanation_html && (
                                         <div className="ep-explanation">
                                             <i className="bi bi-lightbulb"></i>
-                                            <span dangerouslySetInnerHTML={{ __html: q.explanation_html }} />
+                                            <span dangerouslySetInnerHTML={{ __html: renderLatex(q.explanation_html) }} />
                                         </div>
                                     )}
                                     {issues.length > 0 && (
@@ -525,4 +527,13 @@ export default function UploadExamPage() {
 
 function escHtml(s) {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+}
+
+function renderLatex(html) {
+    if (!html) return '';
+    return html.replace(/\$\$\$(.*?)\$\$\$/gs, (_, tex) => {
+        try { return katex.renderToString(tex, { displayMode: true, throwOnError: false }); } catch { return tex; }
+    }).replace(/\$\$(.*?)\$\$/g, (_, tex) => {
+        try { return katex.renderToString(tex, { throwOnError: false }); } catch { return tex; }
+    });
 }
