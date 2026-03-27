@@ -19,14 +19,18 @@ export default function StudentDashboard() {
     const [mySessions, setMySessions] = useState([]);
     const [leaderboard, setLeaderboard] = useState([]);
     const [stats, setStats] = useState({ totalQuizzes: 0, totalScore: 0, totalQuestions: 0, avgPercent: 0, streak: 0 });
-    const [tab, setTab] = useState('exams'); // 'exams', 'history', 'leaderboard', 'achievements'
+    const [tab, setTab] = useState('exams');
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => { if (user) loadData(); }, [user]);
+    const teacherId = userProfile?.teacherId;
+
+    useEffect(() => { if (user) loadData(); }, [user, teacherId]);
 
     const loadData = async () => {
-        // Load active exams
-        const examQ = query(collection(db, 'exams'), where('status', '==', 'active'), orderBy('createdAt', 'desc'));
+        if (!teacherId) { setLoading(false); return; }
+
+        // Load active exams scoped to teacher
+        const examQ = query(collection(db, 'exams'), where('teacherId', '==', teacherId), where('status', '==', 'active'), orderBy('createdAt', 'desc'));
         const examSnap = await getDocs(examQ);
         const examList = examSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         setExams(examList);
@@ -51,35 +55,47 @@ export default function StudentDashboard() {
         setMyResults(results);
         setMySessions(allSessions.sort((a, b) => (b.completedAt?.toMillis?.() || 0) - (a.completedAt?.toMillis?.() || 0)));
 
-        // Calculate stats
         const streak = userProfile?.streak || 0;
         const avgPercent = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
         setStats({ totalQuizzes: allSessions.length, totalScore, totalQuestions, avgPercent, streak });
 
-        // Build leaderboard from all sessions
-        const allSessionsQ = query(collection(db, 'sessions'));
-        const allSnap = await getDocs(allSessionsQ);
-        const userMap = {};
-        allSnap.docs.forEach(d => {
-            const data = d.data();
-            if (!userMap[data.studentId]) {
-                userMap[data.studentId] = { uid: data.studentId, displayName: data.studentName, totalScore: 0, totalQuestions: 0, totalQuizzes: 0 };
-            }
-            userMap[data.studentId].totalScore += data.score || 0;
-            userMap[data.studentId].totalQuestions += data.total || 0;
-            userMap[data.studentId].totalQuizzes++;
-        });
+        // Leaderboard: students of the same teacher
+        const classmatesQ = query(collection(db, 'users'), where('teacherId', '==', teacherId));
+        const classmatesSnap = await getDocs(classmatesQ);
+        const classmates = classmatesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        const classmateIds = new Set(classmates.map(c => c.uid));
 
-        // Load user profiles for photos and streaks
-        const usersSnap = await getDocs(collection(db, 'users'));
-        usersSnap.docs.forEach(d => {
-            const data = d.data();
-            if (userMap[d.id]) {
-                userMap[d.id].photoURL = data.photoURL;
-                userMap[d.id].streak = data.streak || 0;
-                userMap[d.id].displayName = data.displayName || userMap[d.id].displayName;
+        // Get all exam IDs from this teacher to filter sessions
+        const teacherExamIds = new Set(examList.map(e => e.id));
+        // Also get inactive exams for history
+        const allTeacherExamsQ = query(collection(db, 'exams'), where('teacherId', '==', teacherId));
+        const allTeacherExamsSnap = await getDocs(allTeacherExamsQ);
+        allTeacherExamsSnap.docs.forEach(d => teacherExamIds.add(d.id));
+
+        // Build leaderboard from classmate sessions
+        const userMap = {};
+        for (const cm of classmates) {
+            userMap[cm.uid] = { uid: cm.uid, displayName: cm.displayName, photoURL: cm.photoURL, streak: cm.streak || 0, totalScore: 0, totalQuestions: 0, totalQuizzes: 0 };
+        }
+
+        // Use existing sessions data for current user, query classmates
+        if (classmateIds.size > 0) {
+            // Query sessions for classmates (batch if needed)
+            const cmIds = [...classmateIds];
+            for (let i = 0; i < cmIds.length; i += 10) {
+                const batch = cmIds.slice(i, i + 10);
+                const batchQ = query(collection(db, 'sessions'), where('studentId', 'in', batch));
+                const batchSnap = await getDocs(batchQ);
+                batchSnap.docs.forEach(d => {
+                    const data = d.data();
+                    if (!teacherExamIds.has(data.examId)) return; // Only this teacher's exams
+                    if (!userMap[data.studentId]) return;
+                    userMap[data.studentId].totalScore += data.score || 0;
+                    userMap[data.studentId].totalQuestions += data.total || 0;
+                    userMap[data.studentId].totalQuizzes++;
+                });
             }
-        });
+        }
 
         const lb = Object.values(userMap)
             .filter(u => u.totalQuizzes > 0)
@@ -97,6 +113,28 @@ export default function StudentDashboard() {
     const myRank = leaderboard.findIndex(e => e.uid === user?.uid) + 1;
 
     if (loading) return <div className="loading-screen"><div className="spinner"></div><p>Đang tải...</p></div>;
+
+    if (!teacherId) {
+        return (
+            <div className="empty-state" style={{ marginTop: 60 }}>
+                <i className="bi bi-people" style={{ fontSize: '3rem' }}></i>
+                <h2 style={{ margin: '16px 0 8px' }}>Chưa tham gia lớp nào</h2>
+                <p style={{ color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto 24px' }}>
+                    Hãy nhờ giáo viên gửi link lớp học cho bạn (dạng <code>/t/ten-giao-vien</code>) hoặc nhập link bên dưới.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <input type="text" className="form-input" placeholder="Nhập link lớp, VD: /t/nguyen-van-a" id="join-input" style={{ maxWidth: 280 }} />
+                    <button className="btn btn-primary" onClick={() => {
+                        const val = document.getElementById('join-input').value.trim();
+                        const slug = val.replace(/^.*\/t\//, '');
+                        if (slug) window.location.href = `/t/${slug}`;
+                    }}>
+                        <i className="bi bi-box-arrow-in-right"></i> Tham gia
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div>

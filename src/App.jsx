@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
+import AdminDashboard from './pages/AdminDashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import UploadExamPage from './pages/UploadExamPage';
 import ExamDetailPage from './pages/ExamDetailPage';
@@ -9,12 +10,14 @@ import ExamSessionsPage from './pages/ExamSessionsPage';
 import StudentDashboard from './pages/StudentDashboard';
 import QuizPage from './pages/QuizPage';
 import ResultPage from './pages/ResultPage';
+import TeacherPortal from './pages/TeacherPortal';
 import './styles/app.css';
 
 function ProtectedRoute({ children, role }) {
     const { user, userProfile, loading } = useAuth();
     if (loading) return <div className="loading-screen"><div className="spinner"></div></div>;
     if (!user) return <Navigate to="/login" replace />;
+    if (role === 'admin' && userProfile?.role !== 'admin') return <Navigate to="/login" replace />;
     if (role === 'teacher' && userProfile?.role !== 'teacher' && userProfile?.role !== 'admin') {
         return <Navigate to="/student" replace />;
     }
@@ -22,7 +25,7 @@ function ProtectedRoute({ children, role }) {
 }
 
 function Navbar() {
-    const { user, userProfile, logout, isTeacher } = useAuth();
+    const { user, userProfile, logout, isTeacher, isAdmin } = useAuth();
     const navigate = useNavigate();
 
     if (!user) return null;
@@ -32,14 +35,23 @@ function Navbar() {
         navigate('/login');
     };
 
+    const homePath = isAdmin ? '/admin' : isTeacher ? '/teacher' : '/student';
+
     return (
         <nav className="navbar">
             <div className="navbar-content">
-                <Link to={isTeacher ? '/teacher' : '/student'} className="navbar-brand">
+                <Link to={homePath} className="navbar-brand">
                     📝 Thi Online
                 </Link>
                 <div className="navbar-right">
-                    {isTeacher && (
+                    {isAdmin && (
+                        <div className="navbar-links">
+                            <Link to="/admin" className="nav-link"><i className="bi bi-shield-check"></i> Admin</Link>
+                            <Link to="/teacher" className="nav-link"><i className="bi bi-grid"></i> GV</Link>
+                            <Link to="/teacher/upload" className="nav-link"><i className="bi bi-upload"></i> Tạo đề</Link>
+                        </div>
+                    )}
+                    {isTeacher && !isAdmin && (
                         <div className="navbar-links">
                             <Link to="/teacher" className="nav-link"><i className="bi bi-grid"></i> Dashboard</Link>
                             <Link to="/teacher/upload" className="nav-link"><i className="bi bi-upload"></i> Tạo đề</Link>
@@ -48,7 +60,9 @@ function Navbar() {
                     <div className="navbar-user">
                         {userProfile?.photoURL && <img src={userProfile.photoURL} alt="" className="navbar-avatar" referrerPolicy="no-referrer" />}
                         <span className="navbar-name">{userProfile?.displayName || user.email}</span>
-                        <span className={`navbar-role ${userProfile?.role}`}>{userProfile?.role === 'teacher' ? 'GV' : userProfile?.role === 'admin' ? 'Admin' : 'HS'}</span>
+                        <span className={`navbar-role ${userProfile?.role}`}>
+                            {userProfile?.role === 'admin' ? 'Admin' : userProfile?.role === 'teacher' ? 'GV' : 'HS'}
+                        </span>
                     </div>
                     <button className="btn-icon-sm" onClick={handleLogout} title="Đăng xuất">
                         <i className="bi bi-box-arrow-right"></i>
@@ -66,6 +80,8 @@ function AppRoutes() {
             <main className="main-content">
                 <Routes>
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/t/:slug" element={<TeacherPortal />} />
+                    <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
                     <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherDashboard /></ProtectedRoute>} />
                     <Route path="/teacher/upload" element={<ProtectedRoute role="teacher"><UploadExamPage /></ProtectedRoute>} />
                     <Route path="/teacher/exam/:examId" element={<ProtectedRoute role="teacher"><ExamDetailPage /></ProtectedRoute>} />
