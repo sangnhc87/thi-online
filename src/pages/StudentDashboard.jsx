@@ -24,7 +24,11 @@ export default function StudentDashboard() {
 
     const teacherId = userProfile?.teacherId;
 
-    useEffect(() => { if (user) loadData(); }, [user, teacherId]);
+    useEffect(() => {
+        if (user && userProfile) loadData();
+        else if (user && !userProfile) return; // wait for profile
+        else setLoading(false);
+    }, [user, userProfile]);
 
     const loadData = async () => {
         if (!teacherId) { setLoading(false); return; }

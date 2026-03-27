@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
 
         if (snap.exists()) {
             const profile = { uid: firebaseUser.uid, ...snap.data() };
-            // Auto-promote to admin if matching env email
-            if (ADMIN_EMAIL && firebaseUser.email === ADMIN_EMAIL && profile.role !== 'admin') {
+            // Auto-promote to admin if matching env email (case-insensitive)
+            if (ADMIN_EMAIL && firebaseUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() && profile.role !== 'admin') {
                 await updateDoc(ref, { role: 'admin' });
                 profile.role = 'admin';
             }
@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
         }
 
         // New user
-        const isAdmin = ADMIN_EMAIL && firebaseUser.email === ADMIN_EMAIL;
+        const isAdmin = ADMIN_EMAIL && firebaseUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
         const newProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
