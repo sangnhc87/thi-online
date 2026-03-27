@@ -88,6 +88,11 @@ export function AuthProvider({ children }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
             const profile = { uid: user.uid, ...snap.data() };
+            // Auto-promote admin on refresh too
+            if (ADMIN_EMAIL && user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() && profile.role !== 'admin') {
+                await updateDoc(ref, { role: 'admin' });
+                profile.role = 'admin';
+            }
             setUserProfile(profile);
             return profile;
         }

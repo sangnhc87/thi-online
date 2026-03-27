@@ -13,7 +13,7 @@ import { AchievementGrid } from '../components/AchievementBadge';
 import Leaderboard from '../components/Leaderboard';
 
 export default function StudentDashboard() {
-    const { user, userProfile } = useAuth();
+    const { user, userProfile, logout } = useAuth();
     const [exams, setExams] = useState([]);
     const [myResults, setMyResults] = useState({});
     const [mySessions, setMySessions] = useState([]);
@@ -136,11 +136,14 @@ export default function StudentDashboard() {
                         <i className="bi bi-box-arrow-in-right"></i> Tham gia
                     </button>
                 </div>
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    <p>Đang đăng nhập: <strong>{user?.email}</strong> — Vai trò: <strong>{userProfile?.role}</strong></p>
-                    <Link to="/logout" className="btn btn-sm btn-outline" style={{ marginTop: 8 }}>
-                        <i className="bi bi-box-arrow-right"></i> Đăng xuất để đổi tài khoản
-                    </Link>
+
+                {/* BIG logout button */}
+                <div style={{ marginTop: 24, padding: 20, background: 'var(--danger-bg)', borderRadius: 12, maxWidth: 400, margin: '24px auto 0' }}>
+                    <p style={{ fontWeight: 600, marginBottom: 4 }}>Đang đăng nhập: {user?.email}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 12 }}>Vai trò: {userProfile?.role}</p>
+                    <button className="btn btn-danger" onClick={async () => { await logout(); window.location.href = '/login'; }} style={{ width: '100%', padding: '12px 24px', fontSize: '1rem' }}>
+                        <i className="bi bi-box-arrow-right"></i> ĐĂNG XUẤT
+                    </button>
                 </div>
             </div>
         );
