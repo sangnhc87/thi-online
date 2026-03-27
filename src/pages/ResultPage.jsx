@@ -180,6 +180,24 @@ export default function ResultPage() {
                                     <i className="bi bi-dash-circle"></i> Bỏ trống
                                 </div>
                             )}
+
+                            {/* Lời giải */}
+                            {q.explanation_html && (
+                                <div className="rq-explanation">
+                                    <div className="rq-explanation-header">
+                                        <i className="bi bi-lightbulb"></i> Lời giải
+                                    </div>
+                                    <div dangerouslySetInnerHTML={{ __html: renderLatex(q.explanation_html) }} />
+                                </div>
+                            )}
+                            {!q.explanation_html && q.explanation && (
+                                <div className="rq-explanation">
+                                    <div className="rq-explanation-header">
+                                        <i className="bi bi-lightbulb"></i> Lời giải
+                                    </div>
+                                    <div dangerouslySetInnerHTML={{ __html: renderLatex(q.explanation) }} />
+                                </div>
+                            )}
                         </motion.div>
                     );
                 })}

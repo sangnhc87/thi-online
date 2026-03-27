@@ -384,85 +384,83 @@ export default function TeacherDashboard() {
                         <div style={{ padding: 20 }}>
                             <h3 style={{ fontSize: '1.05rem', marginBottom: 12, color: 'var(--primary)' }}><i className="bi bi-info-circle"></i> Tổng quan</h3>
                             <p style={{ lineHeight: 1.7, marginBottom: 12 }}>
-                                Hệ thống hỗ trợ <strong>3 loại câu hỏi</strong>: Trắc nghiệm nhiều lựa chọn (A/B/C/D), Đúng/Sai, và Trả lời ngắn.
-                                Soạn đề trong file <strong>.docx</strong> (Microsoft Word / Google Docs) theo cấu trúc bên dưới rồi tải lên.
+                                Hệ thống hỗ trợ <strong>3 loại câu hỏi</strong> — tự động nhận dạng dựa trên cách soạn. Soạn đề trong file <strong>.docx</strong> (Word / Google Docs) rồi tải lên.
                             </p>
                             <div style={{ background: 'var(--info-bg)', padding: 12, borderRadius: 8, fontSize: '0.9rem' }}>
                                 <strong>Quy tắc chung:</strong>
                                 <ul style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 2 }}>
-                                    <li>Mỗi câu bắt đầu bằng <code>Câu X:</code> (X = số thứ tự)</li>
-                                    <li>Đáp án bắt đầu bằng chữ cái: <code>A.</code> <code>B.</code> <code>C.</code> <code>D.</code></li>
-                                    <li>Đáp án đúng ghi ở dòng: <code>Đáp án: X</code> (X = A/B/C/D)</li>
-                                    <li>Hỗ trợ hình ảnh (chèn trực tiếp trong Word)</li>
-                                    <li>Hỗ trợ công thức LaTeX: inline <code>$...$</code>, block <code>$$...$$</code></li>
-                                    <li>Giữ nguyên in đậm, in nghiêng, gạch chân</li>
+                                    <li>Mỗi câu bắt đầu bằng <code>Câu X:</code> (X = 1, 2, 3...)</li>
+                                    <li><strong>Đáp án đúng</strong> đánh dấu bằng 1 trong 2 cách:
+                                        <br/>• <u>Gạch chân</u> đáp án đúng trong Word (chuẩn tron-de)
+                                        <br/>• Ghi dòng <code>Đáp án: X</code> sau câu hỏi
+                                    </li>
+                                    <li><strong>Lời giải</strong> (tùy chọn): thêm dòng <code>Lời giải: ...</code> sau đáp án</li>
+                                    <li>Hỗ trợ hình ảnh chèn trực tiếp, công thức LaTeX <code>$...$</code></li>
                                 </ul>
                             </div>
                         </div>
                     </div>
 
-                    {/* Type 1: Multiple choice */}
+                    {/* Type 1: Multiple choice A.B.C.D. */}
                     <div className="card" style={{ marginBottom: 20 }}>
                         <div className="card-header-gradient">
                             <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                                <i className="bi bi-1-circle me-2"></i>Loại 1: Trắc nghiệm nhiều lựa chọn (A/B/C/D)
+                                <i className="bi bi-1-circle me-2"></i>Phần I — Trắc nghiệm nhiều lựa chọn (A. B. C. D.)
                             </h3>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>Dạng phổ biến nhất — 4 lựa chọn, chọn 1 đáp án đúng.</p>
+                            <p style={{ marginBottom: 8, color: 'var(--text-secondary)' }}>Phương án bắt đầu bằng <strong>A.</strong> <strong>B.</strong> <strong>C.</strong> <strong>D.</strong> (chữ HOA + dấu chấm). Đánh dấu đáp án đúng bằng <u>gạch chân</u> hoặc dòng "Đáp án:".</p>
                             <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-{`Câu 1: Phương trình nào sau đây có nghiệm x = 2?
+{`Câu 1: Phương trình nào có nghiệm x = 2?
 A. $x^2 - 4 = 0$
 B. $x^2 + 4 = 0$
 C. $x^2 - 2x + 2 = 0$
 D. $2x^2 + 1 = 0$
 Đáp án: A
+Lời giải: $x^2 - 4 = (x-2)(x+2) = 0$ nên x = 2 hoặc x = -2.
 
 Câu 2: Thủ đô của Việt Nam là:
 A. TP. Hồ Chí Minh
 B. Đà Nẵng
 C. Hà Nội
 D. Huế
-Đáp án: C
-
-Câu 3: Cho hàm số $f(x) = x^3 - 3x + 2$.
-Tính $f'(1)$.
-A. 0
-B. 1
-C. -1
-D. 2
-Đáp án: A`}
+Đáp án: C`}
+                            </div>
+                            <div style={{ marginTop: 12, background: 'var(--success-bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem' }}>
+                                <i className="bi bi-lightbulb" style={{ color: 'var(--success)' }}></i> <strong>Cách khác:</strong> Trong Word, <u>gạch chân</u> dòng đáp án đúng thay vì ghi "Đáp án: X". Cả hai cách đều được hỗ trợ.
                             </div>
                         </div>
                     </div>
 
-                    {/* Type 2: True/False */}
+                    {/* Type 2: True/False a)b)c)d) */}
                     <div className="card" style={{ marginBottom: 20 }}>
                         <div className="card-header-gradient" style={{ background: 'var(--gradient-success)' }}>
                             <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                                <i className="bi bi-2-circle me-2"></i>Loại 2: Đúng / Sai
+                                <i className="bi bi-2-circle me-2"></i>Phần II — Đúng / Sai (a) b) c) d))
                             </h3>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>Chỉ có 2 lựa chọn — Đúng hoặc Sai. Soạn như trắc nghiệm với A = Đúng, B = Sai.</p>
+                            <p style={{ marginBottom: 8, color: 'var(--text-secondary)' }}>
+                                Mệnh đề bắt đầu bằng <strong>a)</strong> <strong>b)</strong> <strong>c)</strong> <strong>d)</strong> (chữ thường + ngoặc đóng).
+                                Mỗi mệnh đề có thể Đúng (D) hoặc Sai (S).
+                            </p>
                             <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-{`Câu 1: Trái đất quay quanh Mặt trời.
-A. Đúng
-B. Sai
-Đáp án: A
-
-Câu 2: Nước sôi ở 50°C trong điều kiện tiêu chuẩn.
-A. Đúng
-B. Sai
-Đáp án: B
-
-Câu 3: $\\sqrt{4} = \\pm 2$
-A. Đúng
-B. Sai
-Đáp án: B`}
+{`Câu 3: Cho hàm số $y = x^2 + 2x - 3$. Xét tính đúng/sai:
+a) Hàm số đồng biến trên $(0; +\\infty)$
+b) Hàm số có giá trị nhỏ nhất là $-4$
+c) Đồ thị cắt trục Ox tại 2 điểm
+d) Hàm số nghịch biến trên $(-\\infty; -1)$
+Đáp án: DDDS
+Lời giải: a) Đúng vì $y' = 2x+2 > 0$ khi $x > 0$.
+b) Đúng: $y_{min} = -4$ tại $x = -1$.
+c) Đúng: $\\Delta = 16 > 0$.
+d) Sai: nghịch biến trên $(-\\infty; -1)$ đúng, nhưng...`}
                             </div>
-                            <div style={{ marginTop: 12, background: 'var(--success-bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem' }}>
-                                <i className="bi bi-lightbulb" style={{ color: 'var(--success)' }}></i> <strong>Mẹo:</strong> Luôn để A = Đúng, B = Sai để học sinh dễ làm quen.
+                            <div style={{ marginTop: 12, background: 'var(--warning-bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem' }}>
+                                <i className="bi bi-exclamation-triangle" style={{ color: 'var(--warning)' }}></i> <strong>Chú ý:</strong>
+                                <br/>• Dùng <strong>a) b) c) d)</strong> (chữ thường + ngoặc) — KHÁC với A. B. C. D. của trắc nghiệm
+                                <br/>• <code>Đáp án: DDDS</code> = a) Đúng, b) Đúng, c) Đúng, d) Sai
+                                <br/>• Hoặc <u>gạch chân</u> mệnh đề Đúng trong Word
                             </div>
                         </div>
                     </div>
@@ -471,36 +469,43 @@ B. Sai
                     <div className="card" style={{ marginBottom: 20 }}>
                         <div className="card-header-gradient" style={{ background: 'var(--gradient-cool)' }}>
                             <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
-                                <i className="bi bi-3-circle me-2"></i>Loại 3: Trả lời ngắn (điền đáp án)
+                                <i className="bi bi-3-circle me-2"></i>Phần III — Trả lời ngắn
                             </h3>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
-                                Soạn giống trắc nghiệm nhưng các đáp án là các giá trị cụ thể.
-                                Học sinh chọn đáp án chính xác.
+                            <p style={{ marginBottom: 8, color: 'var(--text-secondary)' }}>
+                                Không có phương án A/B/C/D hay a/b/c/d. Chỉ cần câu hỏi + dòng <code>Đáp án:</code> chứa giá trị đúng.
                             </p>
                             <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-{`Câu 1: Giải phương trình $2x + 6 = 0$. Giá trị $x$ bằng:
-A. -3
-B. 3
-C. -6
-D. 6
-Đáp án: A
+{`Câu 5: Tính giá trị biểu thức $2x + 3$ khi $x = 5$.
+Đáp án: 13
+Lời giải: $2(5) + 3 = 10 + 3 = 13$
 
-Câu 2: Cho tam giác vuông có hai cạnh góc vuông 3cm và 4cm.
-Cạnh huyền bằng bao nhiêu cm?
-A. 5
-B. 7
-C. 6
-D. 25
-Đáp án: A
+Câu 6: Cho tam giác vuông có hai cạnh góc vuông
+3cm và 4cm. Cạnh huyền bằng bao nhiêu cm?
+Đáp án: 5
+Lời giải: Áp dụng Pytago: $\\sqrt{3^2 + 4^2} = \\sqrt{25} = 5$`}
+                            </div>
+                        </div>
+                    </div>
 
-Câu 3: Hoàn thành: "Không thầy đố mày làm ____"
-A. nên
-B. được
-C. gì
-D. xong
-Đáp án: A`}
+                    {/* Lời giải section */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 12, color: 'var(--success)' }}><i className="bi bi-lightbulb"></i> Lời giải (tùy chọn)</h3>
+                            <p style={{ lineHeight: 1.7, marginBottom: 12 }}>
+                                Sau mỗi câu, thêm dòng <code>Lời giải:</code> để giải thích. Lời giải hiển thị cho học sinh sau khi nộp bài.
+                            </p>
+                            <div style={{ display: 'grid', gap: 8 }}>
+                                <div style={{ background: 'var(--bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem', borderLeft: '3px solid var(--success)' }}>
+                                    Từ khóa nhận dạng: <code>Lời giải:</code> hoặc <code>Giải:</code> hoặc <code>Giải thích:</code>
+                                </div>
+                                <div style={{ background: 'var(--bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem', borderLeft: '3px solid var(--info)' }}>
+                                    Lời giải có thể nhiều dòng — tất cả nội dung sau "Lời giải:" đến câu tiếp theo sẽ được gom lại.
+                                </div>
+                                <div style={{ background: 'var(--bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem', borderLeft: '3px solid var(--accent)' }}>
+                                    Hỗ trợ công thức LaTeX và hình ảnh trong lời giải.
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -511,50 +516,53 @@ D. xong
                             <h3 style={{ fontSize: '1.05rem', marginBottom: 16, color: 'var(--accent)' }}><i className="bi bi-stars"></i> Mẹo nâng cao</h3>
                             <div style={{ display: 'grid', gap: 12 }}>
                                 <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--primary)' }}>
-                                    <strong>Công thức toán học</strong>
+                                    <strong>Cách phân biệt loại câu</strong>
                                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                                        Inline: <code>$x^2 + y^2$</code> → hiển thị trong dòng.<br/>
-                                        Block: <code>$$\frac&#123;a+b&#125;&#123;c&#125;$$</code> → hiển thị riêng dòng, căn giữa.
+                                        • <strong>A. B. C. D.</strong> (HOA + chấm) → Trắc nghiệm<br/>
+                                        • <strong>a) b) c) d)</strong> (thường + ngoặc) → Đúng/Sai<br/>
+                                        • Không có phương án, chỉ <code>Đáp án:</code> → Trả lời ngắn
                                     </p>
                                 </div>
                                 <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--success)' }}>
-                                    <strong>Hình ảnh</strong>
+                                    <strong>Đánh dấu đáp án bằng gạch chân</strong>
                                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                                        Chèn hình trực tiếp vào file Word. Hệ thống tự động trích xuất và upload.
-                                        Hỗ trợ: PNG, JPG, GIF, BMP.
+                                        Trong Word, bôi đen đáp án đúng → nhấn <kbd>Ctrl+U</kbd> để gạch chân.
+                                        Hệ thống tự nhận biết — không cần ghi "Đáp án: X".
+                                        Với Đúng/Sai: gạch chân mệnh đề Đúng, không gạch = Sai.
                                     </p>
                                 </div>
                                 <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--accent)' }}>
-                                    <strong>Câu hỏi nhiều dòng</strong>
+                                    <strong>Công thức & hình ảnh</strong>
                                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                                        Nội dung câu hỏi có thể chiếm nhiều đoạn. Hệ thống gom tất cả dòng giữa
-                                        <code>Câu X:</code> và đáp án <code>A.</code> thành nội dung câu hỏi.
+                                        Inline: <code>$x^2 + y^2$</code> — Block: <code>$$\frac&#123;a&#125;&#123;b&#125;$$</code><br/>
+                                        Hình ảnh: chèn trực tiếp trong Word, tự động trích xuất.
                                     </p>
                                 </div>
                                 <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--danger)' }}>
                                     <strong>Lưu ý quan trọng</strong>
                                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                                        • Không để dòng trống giữa đáp án và "Đáp án: X"<br/>
-                                        • File chỉ chấp nhận .docx (không phải .doc cũ)<br/>
-                                        • Dung lượng tối đa: 20MB<br/>
-                                        • Nên đánh số câu liên tục: Câu 1, Câu 2, Câu 3...
+                                        • File chỉ nhận .docx (không phải .doc cũ) — tối đa 20MB<br/>
+                                        • Đánh số câu liên tục: Câu 1, Câu 2, Câu 3...<br/>
+                                        • Trắc nghiệm phải có ít nhất 2 phương án<br/>
+                                        • Đúng/Sai phải có đúng 4 mệnh đề a) b) c) d)
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Quick template */}
+                    {/* Complete template */}
                     <div className="card" style={{ marginBottom: 20 }}>
                         <div style={{ padding: 20 }}>
-                            <h3 style={{ fontSize: '1.05rem', marginBottom: 12 }}><i className="bi bi-download"></i> Mẫu đề tham khảo</h3>
-                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 400, overflow: 'auto' }}>
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 12 }}><i className="bi bi-file-earmark-text"></i> Mẫu đề hoàn chỉnh (3 phần)</h3>
+                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 500, overflow: 'auto' }}>
 {`Câu 1: Số nào sau đây là số nguyên tố?
 A. 4
 B. 9
 C. 7
 D. 15
 Đáp án: C
+Lời giải: 7 chỉ chia hết cho 1 và chính nó.
 
 Câu 2: $\\sin(90°)$ bằng:
 A. 0
@@ -570,25 +578,21 @@ C. Oxy và Carbon
 D. Nitơ và Oxy
 Đáp án: A
 
-Câu 4: Nguyên tử Helium có bao nhiêu electron?
-A. Đúng
-B. Sai
-Đáp án: A
+Câu 4: Xét tính đúng/sai các mệnh đề sau:
+a) $\\sqrt{4} = 2$
+b) $\\sqrt{9} = \\pm 3$
+c) $\\sqrt{0} = 0$
+d) $\\sqrt{-1}$ không xác định trong $\\mathbb{R}$
+Đáp án: DSDD
+Lời giải: b) Sai vì $\\sqrt{9} = 3$ (chỉ lấy giá trị dương).
 
-Câu 5: Nhiệt độ sôi của nước ở áp suất tiêu chuẩn là 100°C.
-A. Đúng
-B. Sai
-Đáp án: A
-
-Câu 6: Tính $\\sqrt{144}$. Kết quả bằng:
-A. 12
-B. 14
-C. 10
-D. 16
-Đáp án: A`}
+Câu 5: Nhiệt độ sôi của nước ở áp suất tiêu chuẩn
+là bao nhiêu °C?
+Đáp án: 100
+Lời giải: Ở 1 atm, nước sôi ở 100°C.`}
                             </div>
                             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 12 }}>
-                                Copy nội dung trên vào file Word (.docx), lưu lại, rồi tải lên hệ thống.
+                                Copy mẫu trên vào Word (.docx), chỉnh sửa theo đề của bạn, lưu và tải lên.
                             </p>
                         </div>
                     </div>

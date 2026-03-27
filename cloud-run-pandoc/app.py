@@ -181,13 +181,30 @@ def blocks_to_html(blocks, images_dir):
 def parse_questions_from_ast(ast_data, images_dir):
     """
     Parse Pandoc AST JSON to extract questions.
-    Expected DOCX format:
+    Supports the standard tron-de-react DOCX format:
+
+    PART 1 — Multiple Choice (A. B. C. D.):
       Câu 1: Question text...
       A. Choice A
-      B. Choice B
+      B. Choice B (underline = correct, OR via "Đáp án: B")
       C. Choice C
       D. Choice D
-      (Đáp án: B)  -- optional answer marker
+      Đáp án: B          ← optional if underline used
+      Lời giải: ...      ← optional explanation
+
+    PART 2 — True/False (a) b) c) d)):
+      Câu 5: Question text...
+      a) Statement 1       ← underline = Đúng
+      b) Statement 2
+      c) Statement 3
+      d) Statement 4
+      Đáp án: DSDD        ← or via underline
+      Lời giải: ...
+
+    PART 3 — Short Answer:
+      Câu 10: Question text...
+      Đáp án: 13
+      Lời giải: ...
     """
     blocks = ast_data.get('blocks', [])
 
@@ -199,14 +216,14 @@ def parse_questions_from_ast(ast_data, images_dir):
         if t in ('Para', 'Plain'):
             text = parse_pandoc_json(c).strip()
             html = extract_inline_html(c, images_dir)
-            paragraphs.append({'text': text, 'html': html, 'block': block})
+            has_underline = check_underline(c)
+            paragraphs.append({'text': text, 'html': html, 'block': block, 'inlines': c, 'underline': has_underline})
         elif t == 'Header':
             if isinstance(c, list) and len(c) >= 3:
                 text = parse_pandoc_json(c[2]).strip()
                 html = extract_inline_html(c[2], images_dir)
-                paragraphs.append({'text': text, 'html': html, 'block': block})
+                paragraphs.append({'text': text, 'html': html, 'block': block, 'inlines': c[2], 'underline': False})
         elif t == 'OrderedList':
-            # Handle ordered list items as individual paragraphs
             if isinstance(c, list) and len(c) >= 2:
                 for item_blocks in c[1]:
                     for ib in item_blocks:
@@ -215,7 +232,8 @@ def parse_questions_from_ast(ast_data, images_dir):
                         if ibt in ('Para', 'Plain'):
                             text = parse_pandoc_json(ibc).strip()
                             html = extract_inline_html(ibc, images_dir)
-                            paragraphs.append({'text': text, 'html': html, 'block': ib})
+                            has_underline = check_underline(ibc)
+                            paragraphs.append({'text': text, 'html': html, 'block': ib, 'inlines': ibc, 'underline': has_underline})
         elif t == 'BulletList':
             for item_blocks in c:
                 for ib in item_blocks:
@@ -224,51 +242,110 @@ def parse_questions_from_ast(ast_data, images_dir):
                     if ibt in ('Para', 'Plain'):
                         text = parse_pandoc_json(ibc).strip()
                         html = extract_inline_html(ibc, images_dir)
-                        paragraphs.append({'text': text, 'html': html, 'block': ib})
+                        has_underline = check_underline(ibc)
+                        paragraphs.append({'text': text, 'html': html, 'block': ib, 'inlines': ibc, 'underline': has_underline})
 
-    # Patterns for question detection
-    # "Câu 1:", "Câu 1.", "Câu 1)", "Question 1:", "1.", "1)" etc.
+    # Patterns
     question_pattern = re.compile(
         r'^(?:Câu|Question|Q)\s*(\d+)\s*[.:)]\s*(.*)',
         re.IGNORECASE | re.DOTALL
     )
-    # "A.", "A)", "a.", "a)" at the start of a line
-    choice_pattern = re.compile(
-        r'^([A-Da-d])\s*[.)]\s*(.*)',
-        re.DOTALL
-    )
-    # Answer marker: "Đáp án: B", "Answer: C", "ĐÁ: A"
-    answer_pattern = re.compile(
-        r'(?:Đáp án|ĐÁ|Answer|Correct)\s*[:=]\s*([A-Da-d])',
-        re.IGNORECASE
-    )
+    # A. B. C. D. (uppercase + period) = MCQ choices
+    mcq_choice_pattern = re.compile(r'^([A-D])\s*[.)]\s*(.*)', re.DOTALL)
+    # a) b) c) d) (lowercase + parenthesis) = True/False statements
+    tf_choice_pattern = re.compile(r'^([a-d])\s*\)\s*(.*)', re.DOTALL)
+    # Answer marker: "Đáp án: B" or "Đáp án: DSDD" or "Đáp án: 13"
+    answer_pattern = re.compile(r'(?:Đáp án|ĐÁ|Answer|Correct)\s*[:=]\s*(.*)', re.IGNORECASE)
+    # Explanation marker: "Lời giải:" or "Giải:"
+    explanation_pattern = re.compile(r'(?:Lời giải|Giải thích|Giải|Explanation|Solution)\s*[:]\s*(.*)', re.IGNORECASE)
 
     questions = []
     current_question = None
+
+    def finalize_question(q):
+        """Auto-classify and finalize a question before appending."""
+        if not q:
+            return
+        choices = q.get('choices', [])
+        # Determine type based on choice format
+        has_mcq = any(c.get('format') == 'mcq' for c in choices)
+        has_tf = any(c.get('format') == 'tf' for c in choices)
+
+        if has_mcq and len(choices) >= 2:
+            q['type'] = 'mcq'
+            # If no answer from "Đáp án:" line, check underline
+            if not q.get('correct_answer'):
+                underlined = [i for i, c in enumerate(choices) if c.get('underline')]
+                if len(underlined) == 1:
+                    q['correct_answer'] = choices[underlined[0]]['letter']
+        elif has_tf:
+            q['type'] = 'tf'
+            # Build DSDS answer from underlines if no text answer
+            if not q.get('correct_answer'):
+                tf_answer = ''
+                for c in choices:
+                    tf_answer += 'D' if c.get('underline') else 'S'
+                if tf_answer:
+                    q['correct_answer'] = tf_answer
+        elif q.get('correct_answer') and not choices:
+            q['type'] = 'short_answer'
+        else:
+            q['type'] = 'mcq'  # default fallback
+
+        # Clean up internal fields
+        for c in choices:
+            c.pop('format', None)
+            c.pop('underline', None)
+
+        questions.append(q)
 
     for para in paragraphs:
         text = para['text']
         html = para['html']
 
+        # Check for explanation marker
+        expl_match = explanation_pattern.match(text)
+        if expl_match and current_question:
+            expl_text = expl_match.group(1).strip()
+            expl_html = re.sub(
+                r'^(?:Lời giải|Giải thích|Giải|Explanation|Solution)\s*[:]\s*',
+                '', html, flags=re.IGNORECASE
+            )
+            current_question['explanation'] = expl_text
+            current_question['explanation_html'] = expl_html
+            continue
+
+        # If we're already collecting explanation (multi-line)
+        if current_question and current_question.get('_collecting_explanation'):
+            # Check if this is a new question or choice — if so, stop collecting
+            if question_pattern.match(text) or mcq_choice_pattern.match(text) or tf_choice_pattern.match(text):
+                current_question.pop('_collecting_explanation', None)
+                # fall through to normal processing
+            else:
+                current_question['explanation'] = (current_question.get('explanation', '') + '\n' + text).strip()
+                current_question['explanation_html'] = (current_question.get('explanation_html', '') + '<br>' + html).strip()
+                continue
+
+        # Mark explanation collection if we just added one
+        if current_question and current_question.get('explanation') and not current_question.get('_collecting_explanation'):
+            current_question['_collecting_explanation'] = True
+
         # Check for answer marker
-        answer_match = answer_pattern.search(text)
+        answer_match = answer_pattern.match(text)
         if answer_match and current_question:
-            current_question['correct_answer'] = answer_match.group(1).upper()
+            answer_val = answer_match.group(1).strip()
+            current_question['correct_answer'] = answer_val
             continue
 
         # Check for new question
         q_match = question_pattern.match(text)
         if q_match:
-            if current_question:
-                questions.append(current_question)
+            finalize_question(current_question)
             q_num = int(q_match.group(1))
             q_text = q_match.group(2).strip()
-            # Get HTML version: remove the "Câu X:" prefix from HTML
             q_html = re.sub(
                 r'^(?:Câu|Question|Q)\s*\d+\s*[.:)]\s*',
-                '',
-                html,
-                flags=re.IGNORECASE
+                '', html, flags=re.IGNORECASE
             )
             current_question = {
                 'number': q_num,
@@ -276,25 +353,42 @@ def parse_questions_from_ast(ast_data, images_dir):
                 'content_html': q_html,
                 'choices': [],
                 'correct_answer': None,
+                'explanation': None,
+                'explanation_html': None,
             }
             continue
 
-        # Check for choice
-        c_match = choice_pattern.match(text)
-        if c_match and current_question:
-            letter = c_match.group(1).upper()
-            c_text = c_match.group(2).strip()
-            c_html = re.sub(
-                r'^[A-Da-d]\s*[.)]\s*',
-                '',
-                html,
-                flags=re.DOTALL
-            )
+        # Check for MCQ choice (A. B. C. D.)
+        mcq_match = mcq_choice_pattern.match(text)
+        if mcq_match and current_question:
+            letter = mcq_match.group(1).upper()
+            c_text = mcq_match.group(2).strip()
+            c_html = re.sub(r'^[A-D]\s*[.)]\s*', '', html, flags=re.DOTALL)
             current_question['choices'].append({
                 'letter': letter,
                 'text': c_text,
                 'html': c_html,
+                'format': 'mcq',
+                'underline': para['underline'],
             })
+            # Reset explanation collection flag if we're now in choices
+            current_question.pop('_collecting_explanation', None)
+            continue
+
+        # Check for TF choice (a) b) c) d))
+        tf_match = tf_choice_pattern.match(text)
+        if tf_match and current_question:
+            letter = tf_match.group(1).lower()
+            c_text = tf_match.group(2).strip()
+            c_html = re.sub(r'^[a-d]\s*\)\s*', '', html, flags=re.DOTALL)
+            current_question['choices'].append({
+                'letter': letter,
+                'text': c_text,
+                'html': c_html,
+                'format': 'tf',
+                'underline': para['underline'],
+            })
+            current_question.pop('_collecting_explanation', None)
             continue
 
         # Otherwise append to current question content (multi-paragraph question)
@@ -303,10 +397,28 @@ def parse_questions_from_ast(ast_data, images_dir):
             current_question['content_html'] += '<br>' + html
 
     # Don't forget the last question
-    if current_question:
-        questions.append(current_question)
+    finalize_question(current_question)
 
     return questions
+
+
+def check_underline(inlines):
+    """Check if any inline element in a Pandoc AST list has underline formatting."""
+    if isinstance(inlines, list):
+        for node in inlines:
+            if isinstance(node, dict):
+                t = node.get('t', '')
+                c = node.get('c', '')
+                if t == 'Underline':
+                    return True
+                # Recurse into containers
+                if t in ('Strong', 'Emph', 'Span', 'Strikeout', 'Superscript', 'Subscript', 'SmallCaps'):
+                    if check_underline(c):
+                        return True
+                if isinstance(c, list):
+                    if check_underline(c):
+                        return True
+    return False
 
 
 def collect_images(images_dir):
