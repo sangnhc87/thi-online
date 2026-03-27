@@ -12,6 +12,8 @@ import ConfettiEffect from '../components/ConfettiEffect';
 import Swal from 'sweetalert2';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { playCorrect, playWrong, playCombo, playAlarm, playVictory, playPerfect, playCountdown, playStart } from '../utils/sounds';
+import Certificate from '../components/Certificate';
 
 function renderLatex(html) {
     if (!html) return '';
@@ -50,6 +52,7 @@ export default function QuizPage() {
     const [newAchievement, setNewAchievement] = useState(null);
     const [answerFeedback, setAnswerFeedback] = useState(null); // 'correct' | 'wrong' | null
     const [countdownValue, setCountdownValue] = useState(3);
+    const [showCert, setShowCert] = useState(false);
     const timerRef = useRef(null);
     const startTimeRef = useRef(null);
 
@@ -97,6 +100,7 @@ export default function QuizPage() {
         // Countdown 3..2..1
         let count = 3;
         setCountdownValue(count);
+        playCountdown();
         const countdownInterval = setInterval(() => {
             count--;
             if (count <= 0) {
@@ -104,8 +108,10 @@ export default function QuizPage() {
                 setPhase('quiz');
                 startTimeRef.current = Date.now();
                 startTimer(examData.duration * 60);
+                playStart();
             } else {
                 setCountdownValue(count);
+                playCountdown();
             }
         }, 1000);
     };
@@ -116,9 +122,11 @@ export default function QuizPage() {
             setTimeLeft(prev => {
                 if (prev <= 1) {
                     clearInterval(timerRef.current);
+                    playAlarm();
                     handleSubmit(true);
                     return 0;
                 }
+                if (prev === 60 || prev === 30 || prev === 10) playAlarm();
                 return prev - 1;
             });
         }, 1000);
@@ -136,11 +144,14 @@ export default function QuizPage() {
                 setQuizStreak(prev => {
                     const newStreak = prev + 1;
                     setMaxQuizStreak(m => Math.max(m, newStreak));
+                    if (newStreak >= 3) playCombo(newStreak);
+                    else playCorrect();
                     return newStreak;
                 });
                 setAnswerFeedback('correct');
             } else {
                 setQuizStreak(0);
+                playWrong();
                 setAnswerFeedback('wrong');
             }
             setTimeout(() => setAnswerFeedback(null), 600);
@@ -251,7 +262,8 @@ export default function QuizPage() {
         }
 
         // Effects
-        if (isPerfect || isHighScore) setShowConfetti(true);
+        if (isPerfect) { setShowConfetti(true); playPerfect(); }
+        else if (isHighScore) { setShowConfetti(true); playVictory(); }
         setPhase('result');
     };
 
@@ -350,7 +362,7 @@ export default function QuizPage() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24 }}>
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24, flexWrap: 'wrap' }}>
                         <button className="btn btn-primary" onClick={() => navigate('/student')}>
                             <i className="bi bi-house"></i> Về trang chủ
                         </button>
@@ -359,8 +371,23 @@ export default function QuizPage() {
                                 <i className="bi bi-eye"></i> Xem chi tiết
                             </button>
                         )}
+                        {pct >= 60 && (
+                            <button className="btn btn-outline" style={{ borderColor: '#f59e0b', color: '#f59e0b' }} onClick={() => setShowCert(true)}>
+                                <i className="bi bi-award"></i> Giấy khen
+                            </button>
+                        )}
                     </div>
                 </motion.div>
+
+                {showCert && (
+                    <Certificate
+                        studentName={user?.displayName}
+                        examTitle={exam?.title}
+                        score={score}
+                        total={questions.length}
+                        onClose={() => setShowCert(false)}
+                    />
+                )}
             </div>
         );
     }

@@ -245,6 +245,30 @@ export default function UploadExamPage() {
         }, 10);
     }, [editingQ, updateQ, updateChoice]);
 
+    const insertAtLineStart = useCallback((fieldKey, prefix) => {
+        const ta = fieldRefs.current[fieldKey];
+        if (!ta) return;
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        const val = ta.value;
+        const selected = val.slice(start, end);
+        // Add prefix to each line in the selection (or current line)
+        const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+        const lineEnd = val.indexOf('\n', end);
+        const actualEnd = lineEnd === -1 ? val.length : lineEnd;
+        const block = val.slice(lineStart, actualEnd);
+        const lines = block.split('\n');
+        const prefixed = lines.map((line, i) => {
+            if (prefix === '1. ') return `${i + 1}. ${line}`;
+            return prefix + line;
+        }).join('\n');
+        const newVal = val.slice(0, lineStart) + prefixed + val.slice(actualEnd);
+        if (fieldKey === 'q-content') updateQ(editingQ, { content_text: newVal });
+        else if (fieldKey === 'q-expl') updateQ(editingQ, { explanation: newVal });
+        else if (fieldKey.startsWith('q-c')) updateChoice(editingQ, parseInt(fieldKey.slice(3)), { text: newVal });
+        setTimeout(() => { ta.focus(); }, 10);
+    }, [editingQ, updateQ, updateChoice]);
+
     // ═══ Image upload ═══
     const handleImageUpload = useCallback(async (e) => {
         const files = e.target.files;
@@ -488,14 +512,37 @@ export default function UploadExamPage() {
     // ═══ Mini toolbar component ═══
     const EditorToolbar = ({ fieldKey, onMath, onImage }) => (
         <div className="ed-toolbar">
-            <button className="ed-tb-btn" title="In đậm (Ctrl+B)" onClick={() => wrapSelection(fieldKey, '**', '**')}>
+            <button className="ed-tb-btn" title="In đậm **text**" onClick={() => wrapSelection(fieldKey, '**', '**')}>
                 <i className="bi bi-type-bold"></i>
             </button>
-            <button className="ed-tb-btn" title="In nghiêng (Ctrl+I)" onClick={() => wrapSelection(fieldKey, '*', '*')}>
+            <button className="ed-tb-btn" title="In nghiêng *text*" onClick={() => wrapSelection(fieldKey, '*', '*')}>
                 <i className="bi bi-type-italic"></i>
             </button>
             <button className="ed-tb-btn" title="Gạch chân" onClick={() => wrapSelection(fieldKey, '<u>', '</u>')}>
                 <i className="bi bi-type-underline"></i>
+            </button>
+            <button className="ed-tb-btn" title="Gạch ngang" onClick={() => wrapSelection(fieldKey, '~~', '~~')}>
+                <i className="bi bi-type-strikethrough"></i>
+            </button>
+            <span className="ed-tb-sep" />
+            <button className="ed-tb-btn" title="Căn giữa" onClick={() => wrapSelection(fieldKey, '<center>', '</center>')}>
+                <i className="bi bi-text-center"></i>
+            </button>
+            <button className="ed-tb-btn" title="Danh sách •" onClick={() => insertAtLineStart(fieldKey, '• ')}>
+                <i className="bi bi-list-ul"></i>
+            </button>
+            <button className="ed-tb-btn" title="Danh sách 1." onClick={() => insertAtLineStart(fieldKey, '1. ')}>
+                <i className="bi bi-list-ol"></i>
+            </button>
+            <span className="ed-tb-sep" />
+            <button className="ed-tb-btn" title="Tô sáng" onClick={() => wrapSelection(fieldKey, '<mark>', '</mark>')}>
+                <i className="bi bi-highlighter"></i>
+            </button>
+            <button className="ed-tb-btn" title="Chỉ số trên" onClick={() => wrapSelection(fieldKey, '<sup>', '</sup>')}>
+                x<sup style={{fontSize:'0.6em'}}>²</sup>
+            </button>
+            <button className="ed-tb-btn" title="Chỉ số dưới" onClick={() => wrapSelection(fieldKey, '<sub>', '</sub>')}>
+                x<sub style={{fontSize:'0.6em'}}>₂</sub>
             </button>
             <span className="ed-tb-sep" />
             <button className="ed-tb-btn accent" title="Chèn công thức" onClick={onMath}>
@@ -1038,7 +1085,20 @@ function extractImgTags(html) {
 }
 
 function richHtml(text, preservedImgs) {
-    let html = escHtml(text);
+    let html = (text || '');
+    // Bold **text**
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic *text*
+    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    // Strikethrough ~~text~~
+    html = html.replace(/~~(.+?)~~/g, '<s>$1</s>');
+    // Bullet lists: lines starting with • 
+    html = html.replace(/^• (.+)$/gm, '<li style="list-style:disc;margin-left:20px">$1</li>');
+    // Numbered lists: lines starting with N. 
+    html = html.replace(/^\d+\. (.+)$/gm, '<li style="list-style:decimal;margin-left:20px">$1</li>');
+    // Escape HTML entities for remaining text (but preserve tags we added)
+    // Newlines to <br>
+    html = html.replace(/\n/g, '<br>');
     if (preservedImgs && preservedImgs.length > 0) {
         html += '<div class="preserved-imgs">' + preservedImgs.join('') + '</div>';
     }

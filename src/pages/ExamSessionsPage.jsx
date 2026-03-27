@@ -6,6 +6,36 @@ import { motion } from 'framer-motion';
 import { formatDateTime, formatDurationLong, formatPercent, getScoreColor } from '../utils/formatters';
 import StatsCard from '../components/StatsCard';
 
+function exportToExcel(sessions, examTitle) {
+    const headers = ['STT', 'Họ tên', 'Email', 'Điểm', 'Tổng câu', 'Tỷ lệ %', 'Thời gian làm (s)', 'Ngày nộp'];
+    const rows = sessions.map((s, i) => [
+        i + 1,
+        s.studentName || 'Ẩn danh',
+        s.studentEmail || '',
+        s.score || 0,
+        s.total || 0,
+        s.total ? Math.round((s.score / s.total) * 100) : 0,
+        s.timeSpent || '',
+        s.completedAt?.toDate?.()?.toLocaleString('vi-VN') || '',
+    ]);
+
+    let csv = '\uFEFF'; // BOM for UTF-8
+    csv += headers.join(',') + '\n';
+    rows.forEach(row => {
+        csv += row.map(cell => {
+            const str = String(cell);
+            return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
+        }).join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${examTitle || 'ket-qua'}_${new Date().toLocaleDateString('vi-VN')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
 export default function ExamSessionsPage() {
     const { examId } = useParams();
     const [exam, setExam] = useState(null);
@@ -14,6 +44,7 @@ export default function ExamSessionsPage() {
     const [loading, setLoading] = useState(true);
     const [sortBy, setSortBy] = useState('score'); // 'score', 'time', 'name'
     const [sortDir, setSortDir] = useState('desc');
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => { loadData(); }, [examId]);
 
@@ -43,7 +74,13 @@ export default function ExamSessionsPage() {
         setLoading(false);
     };
 
-    const sorted = [...sessions].sort((a, b) => {
+    const filtered = sessions.filter(s => {
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        return (s.studentName || '').toLowerCase().includes(term) || (s.studentEmail || '').toLowerCase().includes(term);
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
         const dir = sortDir === 'desc' ? -1 : 1;
         if (sortBy === 'score') return ((a.score || 0) - (b.score || 0)) * dir;
         if (sortBy === 'name') return (a.studentName || '').localeCompare(b.studentName || '') * dir;
@@ -83,6 +120,20 @@ export default function ExamSessionsPage() {
                 <StatsCard icon="trophy" label="Điểm cao nhất" value={`${stats.max}/${exam?.questionCount || '?'}`} color="success" delay={2} />
                 <StatsCard icon="star" label="Điểm tuyệt đối" value={stats.perfect} color="gold" delay={3} />
             </div>
+
+            {/* Search & export bar */}
+            {sessions.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+                        <i className="bi bi-search" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}></i>
+                        <input type="text" placeholder="Tìm học sinh..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                            style={{ width: '100%', padding: '8px 12px 8px 36px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.85rem' }} />
+                    </div>
+                    <button className="btn btn-outline btn-sm" onClick={() => exportToExcel(sorted, exam?.title)}>
+                        <i className="bi bi-file-earmark-spreadsheet"></i> Xuất CSV
+                    </button>
+                </div>
+            )}
 
             {/* Score distribution */}
             {sessions.length > 0 && (
