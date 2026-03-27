@@ -200,7 +200,7 @@ export default function UploadExamPage() {
                             </p>
                             <small style={{ color: 'var(--text-muted)' }}>Chỉ chấp nhận file .docx</small>
                         </div>
-                        <input id="file-input" type="file" accept=".docx" onChange={e => setFile(e.target.files[0])} style={{ display: 'none' }} required />
+                        <input id="file-input" type="file" accept=".docx" onChange={e => setFile(e.target.files[0])} style={{ display: 'none' }} />
 
                         <div style={{ marginTop: 16 }}>
                             <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowGuide(!showGuide)}>

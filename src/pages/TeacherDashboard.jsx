@@ -15,7 +15,7 @@ export default function TeacherDashboard() {
     const [stats, setStats] = useState({ total: 0, active: 0, draft: 0, totalSessions: 0, studentCount: 0 });
     const [filter, setFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const [activeTab, setActiveTab] = useState('exams'); // 'exams' | 'students' | 'settings'
+    const [activeTab, setActiveTab] = useState('exams'); // 'exams' | 'students' | 'guide' | 'settings'
     const [loading, setLoading] = useState(true);
 
     const slug = userProfile?.teacherSlug;
@@ -225,6 +225,9 @@ export default function TeacherDashboard() {
                 <button className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); setSearch(''); }}>
                     <i className="bi bi-people"></i> Học sinh ({stats.studentCount})
                 </button>
+                <button className={`tab-btn ${activeTab === 'guide' ? 'active' : ''}`} onClick={() => { setActiveTab('guide'); setSearch(''); }}>
+                    <i className="bi bi-book"></i> Hướng dẫn
+                </button>
                 <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setSearch(''); }}>
                     <i className="bi bi-gear"></i> Cài đặt
                 </button>
@@ -368,6 +371,227 @@ export default function TeacherDashboard() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ===== GUIDE TAB ===== */}
+            {activeTab === 'guide' && (
+                <div style={{ maxWidth: 800 }}>
+                    <h2 style={{ fontSize: '1.3rem', marginBottom: 20 }}><i className="bi bi-book"></i> Hướng dẫn soạn đề thi DOCX</h2>
+
+                    {/* Overview */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 12, color: 'var(--primary)' }}><i className="bi bi-info-circle"></i> Tổng quan</h3>
+                            <p style={{ lineHeight: 1.7, marginBottom: 12 }}>
+                                Hệ thống hỗ trợ <strong>3 loại câu hỏi</strong>: Trắc nghiệm nhiều lựa chọn (A/B/C/D), Đúng/Sai, và Trả lời ngắn.
+                                Soạn đề trong file <strong>.docx</strong> (Microsoft Word / Google Docs) theo cấu trúc bên dưới rồi tải lên.
+                            </p>
+                            <div style={{ background: 'var(--info-bg)', padding: 12, borderRadius: 8, fontSize: '0.9rem' }}>
+                                <strong>Quy tắc chung:</strong>
+                                <ul style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 2 }}>
+                                    <li>Mỗi câu bắt đầu bằng <code>Câu X:</code> (X = số thứ tự)</li>
+                                    <li>Đáp án bắt đầu bằng chữ cái: <code>A.</code> <code>B.</code> <code>C.</code> <code>D.</code></li>
+                                    <li>Đáp án đúng ghi ở dòng: <code>Đáp án: X</code> (X = A/B/C/D)</li>
+                                    <li>Hỗ trợ hình ảnh (chèn trực tiếp trong Word)</li>
+                                    <li>Hỗ trợ công thức LaTeX: inline <code>$...$</code>, block <code>$$...$$</code></li>
+                                    <li>Giữ nguyên in đậm, in nghiêng, gạch chân</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Type 1: Multiple choice */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div className="card-header-gradient">
+                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
+                                <i className="bi bi-1-circle me-2"></i>Loại 1: Trắc nghiệm nhiều lựa chọn (A/B/C/D)
+                            </h3>
+                        </div>
+                        <div style={{ padding: 20 }}>
+                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>Dạng phổ biến nhất — 4 lựa chọn, chọn 1 đáp án đúng.</p>
+                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+{`Câu 1: Phương trình nào sau đây có nghiệm x = 2?
+A. $x^2 - 4 = 0$
+B. $x^2 + 4 = 0$
+C. $x^2 - 2x + 2 = 0$
+D. $2x^2 + 1 = 0$
+Đáp án: A
+
+Câu 2: Thủ đô của Việt Nam là:
+A. TP. Hồ Chí Minh
+B. Đà Nẵng
+C. Hà Nội
+D. Huế
+Đáp án: C
+
+Câu 3: Cho hàm số $f(x) = x^3 - 3x + 2$.
+Tính $f'(1)$.
+A. 0
+B. 1
+C. -1
+D. 2
+Đáp án: A`}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Type 2: True/False */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div className="card-header-gradient" style={{ background: 'var(--gradient-success)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
+                                <i className="bi bi-2-circle me-2"></i>Loại 2: Đúng / Sai
+                            </h3>
+                        </div>
+                        <div style={{ padding: 20 }}>
+                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>Chỉ có 2 lựa chọn — Đúng hoặc Sai. Soạn như trắc nghiệm với A = Đúng, B = Sai.</p>
+                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+{`Câu 1: Trái đất quay quanh Mặt trời.
+A. Đúng
+B. Sai
+Đáp án: A
+
+Câu 2: Nước sôi ở 50°C trong điều kiện tiêu chuẩn.
+A. Đúng
+B. Sai
+Đáp án: B
+
+Câu 3: $\\sqrt{4} = \\pm 2$
+A. Đúng
+B. Sai
+Đáp án: B`}
+                            </div>
+                            <div style={{ marginTop: 12, background: 'var(--success-bg)', padding: 10, borderRadius: 8, fontSize: '0.85rem' }}>
+                                <i className="bi bi-lightbulb" style={{ color: 'var(--success)' }}></i> <strong>Mẹo:</strong> Luôn để A = Đúng, B = Sai để học sinh dễ làm quen.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Type 3: Short answer */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div className="card-header-gradient" style={{ background: 'var(--gradient-cool)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
+                                <i className="bi bi-3-circle me-2"></i>Loại 3: Trả lời ngắn (điền đáp án)
+                            </h3>
+                        </div>
+                        <div style={{ padding: 20 }}>
+                            <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
+                                Soạn giống trắc nghiệm nhưng các đáp án là các giá trị cụ thể.
+                                Học sinh chọn đáp án chính xác.
+                            </p>
+                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+{`Câu 1: Giải phương trình $2x + 6 = 0$. Giá trị $x$ bằng:
+A. -3
+B. 3
+C. -6
+D. 6
+Đáp án: A
+
+Câu 2: Cho tam giác vuông có hai cạnh góc vuông 3cm và 4cm.
+Cạnh huyền bằng bao nhiêu cm?
+A. 5
+B. 7
+C. 6
+D. 25
+Đáp án: A
+
+Câu 3: Hoàn thành: "Không thầy đố mày làm ____"
+A. nên
+B. được
+C. gì
+D. xong
+Đáp án: A`}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Tips & advanced */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 16, color: 'var(--accent)' }}><i className="bi bi-stars"></i> Mẹo nâng cao</h3>
+                            <div style={{ display: 'grid', gap: 12 }}>
+                                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--primary)' }}>
+                                    <strong>Công thức toán học</strong>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                                        Inline: <code>$x^2 + y^2$</code> → hiển thị trong dòng.<br/>
+                                        Block: <code>$$\frac&#123;a+b&#125;&#123;c&#125;$$</code> → hiển thị riêng dòng, căn giữa.
+                                    </p>
+                                </div>
+                                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--success)' }}>
+                                    <strong>Hình ảnh</strong>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                                        Chèn hình trực tiếp vào file Word. Hệ thống tự động trích xuất và upload.
+                                        Hỗ trợ: PNG, JPG, GIF, BMP.
+                                    </p>
+                                </div>
+                                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--accent)' }}>
+                                    <strong>Câu hỏi nhiều dòng</strong>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                                        Nội dung câu hỏi có thể chiếm nhiều đoạn. Hệ thống gom tất cả dòng giữa
+                                        <code>Câu X:</code> và đáp án <code>A.</code> thành nội dung câu hỏi.
+                                    </p>
+                                </div>
+                                <div style={{ background: 'var(--bg)', padding: 12, borderRadius: 8, borderLeft: '3px solid var(--danger)' }}>
+                                    <strong>Lưu ý quan trọng</strong>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                                        • Không để dòng trống giữa đáp án và "Đáp án: X"<br/>
+                                        • File chỉ chấp nhận .docx (không phải .doc cũ)<br/>
+                                        • Dung lượng tối đa: 20MB<br/>
+                                        • Nên đánh số câu liên tục: Câu 1, Câu 2, Câu 3...
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Quick template */}
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 12 }}><i className="bi bi-download"></i> Mẫu đề tham khảo</h3>
+                            <div className="code-block" style={{ background: '#1e293b', color: '#e2e8f0', padding: 16, borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 400, overflow: 'auto' }}>
+{`Câu 1: Số nào sau đây là số nguyên tố?
+A. 4
+B. 9
+C. 7
+D. 15
+Đáp án: C
+
+Câu 2: $\\sin(90°)$ bằng:
+A. 0
+B. 1
+C. -1
+D. $\\frac{1}{2}$
+Đáp án: B
+
+Câu 3: Nước là hợp chất gồm:
+A. Hydro và Oxy
+B. Hydro và Nitơ
+C. Oxy và Carbon
+D. Nitơ và Oxy
+Đáp án: A
+
+Câu 4: Nguyên tử Helium có bao nhiêu electron?
+A. Đúng
+B. Sai
+Đáp án: A
+
+Câu 5: Nhiệt độ sôi của nước ở áp suất tiêu chuẩn là 100°C.
+A. Đúng
+B. Sai
+Đáp án: A
+
+Câu 6: Tính $\\sqrt{144}$. Kết quả bằng:
+A. 12
+B. 14
+C. 10
+D. 16
+Đáp án: A`}
+                            </div>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 12 }}>
+                                Copy nội dung trên vào file Word (.docx), lưu lại, rồi tải lên hệ thống.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             )}
 
