@@ -42,20 +42,33 @@ export function AuthProvider({ children }) {
             displayName: firebaseUser.displayName,
             photoURL: firebaseUser.photoURL,
             role: 'student',
+            streak: 0,
+            maxStreak: 0,
+            totalQuizzes: 0,
+            totalScore: 0,
+            totalQuestions: 0,
+            perfectScores: 0,
+            speedFinishes: 0,
+            achievements: [],
+            lastActiveDate: '',
             createdAt: Timestamp.now(),
         };
         await setDoc(ref, newProfile);
         return newProfile;
     };
 
-    const login = () => signInWithPopup(auth, new GoogleAuthProvider());
+    const signInWithGoogle = async () => {
+        const result = await signInWithPopup(auth, new GoogleAuthProvider());
+        return result;
+    };
     const logout = () => signOut(auth);
 
     const value = {
         user,
         userProfile,
         loading,
-        login,
+        signInWithGoogle,
+        login: signInWithGoogle,
         logout,
         isTeacher: userProfile?.role === 'teacher' || userProfile?.role === 'admin',
         isAdmin: userProfile?.role === 'admin',

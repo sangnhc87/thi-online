@@ -30,10 +30,12 @@ service cloud.firestore {
 
     // Quiz sessions (student attempts)
     match /sessions/{sessionId} {
-      // Students can read their own sessions, teachers can read sessions for their exams
+      // Students can read their own sessions
       allow read: if request.auth != null
-        && (resource.data.studentId == request.auth.uid
-            || resource.data.teacherId == request.auth.uid);
+        && resource.data.studentId == request.auth.uid;
+      // Teachers can read all sessions (for exam results pages)
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
       // Students can create sessions
       allow create: if request.auth != null
         && request.resource.data.studentId == request.auth.uid;

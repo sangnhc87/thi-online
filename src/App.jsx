@@ -1,89 +1,83 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import 'bootstrap-icons/font/bootstrap-icons.css';
-import './styles/app.css';
-
-// Pages
 import LoginPage from './pages/LoginPage';
 import TeacherDashboard from './pages/TeacherDashboard';
 import UploadExamPage from './pages/UploadExamPage';
+import ExamDetailPage from './pages/ExamDetailPage';
+import ExamSessionsPage from './pages/ExamSessionsPage';
 import StudentDashboard from './pages/StudentDashboard';
 import QuizPage from './pages/QuizPage';
+import ResultPage from './pages/ResultPage';
+import './styles/app.css';
 
-function ProtectedRoute({ children, requireTeacher = false }) {
-    const { user, userProfile, loading, isTeacher } = useAuth();
+function ProtectedRoute({ children, role }) {
+    const { user, userProfile, loading } = useAuth();
     if (loading) return <div className="loading-screen"><div className="spinner"></div></div>;
-    if (!user) return <Navigate to="/login" />;
-    if (requireTeacher && !isTeacher) return <Navigate to="/student" />;
+    if (!user) return <Navigate to="/login" replace />;
+    if (role === 'teacher' && userProfile?.role !== 'teacher' && userProfile?.role !== 'admin') {
+        return <Navigate to="/student" replace />;
+    }
     return children;
 }
 
-function AppNavbar() {
+function Navbar() {
     const { user, userProfile, logout, isTeacher } = useAuth();
-    const location = useLocation();
+    const navigate = useNavigate();
 
-    // Hide navbar on login page and quiz page
-    if (!user || location.pathname.startsWith('/student/quiz/')) return null;
+    if (!user) return null;
+
+    const handleLogout = async () => {
+        await logout();
+        navigate('/login');
+    };
 
     return (
-        <nav className="app-navbar">
-            <NavLink to="/" className="brand">Thi Online</NavLink>
-            <div className="nav-links">
-                {isTeacher && (
-                    <>
-                        <NavLink to="/teacher" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                            <i className="bi bi-grid me-1"></i>Kho đề
-                        </NavLink>
-                        <NavLink to="/teacher/upload" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                            <i className="bi bi-cloud-arrow-up me-1"></i>Tải lên
-                        </NavLink>
-                    </>
-                )}
-                <NavLink to="/student" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                    <i className="bi bi-mortarboard me-1"></i>Làm bài
-                </NavLink>
-            </div>
-            <div className="user-info">
-                {user.photoURL && <img src={user.photoURL} alt="" className="user-avatar" referrerPolicy="no-referrer" />}
-                <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{user.displayName}</span>
-                <span className="stat-badge primary" style={{ fontSize: '0.75rem' }}>
-                    {userProfile?.role || 'student'}
-                </span>
-                <button className="btn-logout" onClick={logout}>
-                    <i className="bi bi-box-arrow-right"></i>
-                </button>
+        <nav className="navbar">
+            <div className="navbar-content">
+                <Link to={isTeacher ? '/teacher' : '/student'} className="navbar-brand">
+                    📝 Thi Online
+                </Link>
+                <div className="navbar-right">
+                    {isTeacher && (
+                        <div className="navbar-links">
+                            <Link to="/teacher" className="nav-link"><i className="bi bi-grid"></i> Dashboard</Link>
+                            <Link to="/teacher/upload" className="nav-link"><i className="bi bi-upload"></i> Tạo đề</Link>
+                        </div>
+                    )}
+                    <div className="navbar-user">
+                        {userProfile?.photoURL && <img src={userProfile.photoURL} alt="" className="navbar-avatar" referrerPolicy="no-referrer" />}
+                        <span className="navbar-name">{userProfile?.displayName || user.email}</span>
+                        <span className={`navbar-role ${userProfile?.role}`}>{userProfile?.role === 'teacher' ? 'GV' : userProfile?.role === 'admin' ? 'Admin' : 'HS'}</span>
+                    </div>
+                    <button className="btn-icon-sm" onClick={handleLogout} title="Đăng xuất">
+                        <i className="bi bi-box-arrow-right"></i>
+                    </button>
+                </div>
             </div>
         </nav>
     );
 }
 
 function AppRoutes() {
-    const { user, loading, isTeacher } = useAuth();
-
-    if (loading) return <div className="loading-screen"><div className="spinner"></div><p>Đang tải...</p></div>;
-
     return (
-        <div className="app-shell">
-            <AppNavbar />
-            <div className="main-content">
+        <>
+            <Navbar />
+            <main className="main-content">
                 <Routes>
-                    <Route path="/login" element={user ? <Navigate to={isTeacher ? '/teacher' : '/student'} /> : <LoginPage />} />
-
-                    {/* Teacher routes */}
-                    <Route path="/teacher" element={<ProtectedRoute requireTeacher><TeacherDashboard /></ProtectedRoute>} />
-                    <Route path="/teacher/upload" element={<ProtectedRoute requireTeacher><UploadExamPage /></ProtectedRoute>} />
-
-                    {/* Student routes */}
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherDashboard /></ProtectedRoute>} />
+                    <Route path="/teacher/upload" element={<ProtectedRoute role="teacher"><UploadExamPage /></ProtectedRoute>} />
+                    <Route path="/teacher/exam/:examId" element={<ProtectedRoute role="teacher"><ExamDetailPage /></ProtectedRoute>} />
+                    <Route path="/teacher/exam/:examId/sessions" element={<ProtectedRoute role="teacher"><ExamSessionsPage /></ProtectedRoute>} />
                     <Route path="/student" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
                     <Route path="/student/quiz/:examId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
-
-                    {/* Default redirect */}
-                    <Route path="/" element={<Navigate to={user ? (isTeacher ? '/teacher' : '/student') : '/login'} />} />
-                    <Route path="*" element={<Navigate to="/" />} />
+                    <Route path="/student/result/:sessionId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
+                    <Route path="/" element={<Navigate to="/login" replace />} />
+                    <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
-            </div>
-        </div>
+            </main>
+        </>
     );
 }
 
