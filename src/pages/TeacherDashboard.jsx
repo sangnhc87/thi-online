@@ -9,13 +9,13 @@ import StatsCard from '../components/StatsCard';
 import Swal from 'sweetalert2';
 
 export default function TeacherDashboard() {
-    const { user, userProfile, isSubscriptionActive } = useAuth();
+    const { user, userProfile, isSubscriptionActive, refreshProfile, generateSlug } = useAuth();
     const [exams, setExams] = useState([]);
     const [students, setStudents] = useState([]);
     const [stats, setStats] = useState({ total: 0, active: 0, draft: 0, totalSessions: 0, studentCount: 0 });
     const [filter, setFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const [activeTab, setActiveTab] = useState('exams'); // 'exams' | 'students'
+    const [activeTab, setActiveTab] = useState('exams'); // 'exams' | 'students' | 'settings'
     const [loading, setLoading] = useState(true);
 
     const slug = userProfile?.teacherSlug;
@@ -36,16 +36,22 @@ export default function TeacherDashboard() {
         const studentList = studentSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
         setStudents(studentList);
 
-        // Load session counts
+        // Load session counts per exam + per student
         const sessionCounts = {};
+        const studentSessionCounts = {};
         let totalSessions = 0;
         for (const exam of examList) {
             const sSnap = await getDocs(query(collection(db, 'sessions'), where('examId', '==', exam.id)));
             sessionCounts[exam.id] = sSnap.size;
             totalSessions += sSnap.size;
+            sSnap.docs.forEach(d => {
+                const sid = d.data().studentId;
+                studentSessionCounts[sid] = (studentSessionCounts[sid] || 0) + 1;
+            });
         }
 
         setExams(examList.map(e => ({ ...e, sessionCount: sessionCounts[e.id] || 0 })));
+        setStudents(studentList.map(s => ({ ...s, quizCount: studentSessionCounts[s.uid] || 0 })));
         setStats({
             total: examList.length,
             active: examList.filter(e => e.status === 'active').length,
@@ -62,32 +68,25 @@ export default function TeacherDashboard() {
             return;
         }
         const newStatus = currentStatus === 'active' ? 'draft' : 'active';
-        const result = await Swal.fire({
+        const r = await Swal.fire({
             title: `${newStatus === 'active' ? 'Kích hoạt' : 'Đóng'} đề thi?`,
-            text: `Đề sẽ được ${newStatus === 'active' ? 'mở cho học sinh' : 'đóng lại'}.`,
-            icon: 'question',
-            showCancelButton: true,
+            icon: 'question', showCancelButton: true,
             confirmButtonText: newStatus === 'active' ? 'Kích hoạt' : 'Đóng lại',
             cancelButtonText: 'Hủy',
             confirmButtonColor: newStatus === 'active' ? '#10b981' : '#f59e0b',
         });
-        if (!result.isConfirmed) return;
+        if (!r.isConfirmed) return;
         await updateDoc(doc(db, 'exams', examId), { status: newStatus });
         setExams(prev => prev.map(e => e.id === examId ? { ...e, status: newStatus } : e));
         setStats(prev => ({ ...prev, active: prev.active + (newStatus === 'active' ? 1 : -1), draft: prev.draft + (newStatus === 'active' ? -1 : 1) }));
     };
 
     const handleDelete = async (examId, title) => {
-        const result = await Swal.fire({
-            title: 'Xóa đề thi?',
-            html: `Xóa "<b>${title}</b>"?<br><small>Không thể hoàn tác.</small>`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonText: 'Hủy',
-            confirmButtonText: 'Xóa vĩnh viễn',
+        const r = await Swal.fire({
+            title: 'Xóa đề thi?', html: `Xóa "<b>${title}</b>"?<br><small>Không thể hoàn tác.</small>`,
+            icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonText: 'Hủy', confirmButtonText: 'Xóa vĩnh viễn',
         });
-        if (!result.isConfirmed) return;
+        if (!r.isConfirmed) return;
         const qSnap = await getDocs(collection(db, 'exams', examId, 'questions'));
         await Promise.all(qSnap.docs.map(d => deleteDoc(d.ref)));
         await deleteDoc(doc(db, 'exams', examId));
@@ -99,6 +98,73 @@ export default function TeacherDashboard() {
         if (!portalUrl) return;
         navigator.clipboard.writeText(portalUrl);
         Swal.fire({ icon: 'success', title: 'Đã copy link!', text: portalUrl, timer: 2000, showConfirmButton: false });
+    };
+
+    // ===== Student management =====
+    const handleBlockStudent = async (student) => {
+        const isBlocked = student.blocked;
+        const r = await Swal.fire({
+            title: isBlocked ? 'Mở khóa học sinh?' : 'Khóa học sinh?',
+            text: isBlocked
+                ? `Mở khóa "${student.displayName}"? Họ sẽ lại có thể thi.`
+                : `Khóa "${student.displayName}"? Họ sẽ không thể thi.`,
+            icon: 'question', showCancelButton: true,
+            confirmButtonText: isBlocked ? 'Mở khóa' : 'Khóa',
+            confirmButtonColor: isBlocked ? '#10b981' : '#f59e0b',
+            cancelButtonText: 'Hủy',
+        });
+        if (!r.isConfirmed) return;
+        await updateDoc(doc(db, 'users', student.uid), { blocked: !isBlocked });
+        setStudents(prev => prev.map(s => s.uid === student.uid ? { ...s, blocked: !isBlocked } : s));
+    };
+
+    const handleRemoveStudent = async (student) => {
+        const r = await Swal.fire({
+            title: 'Xóa học sinh?',
+            html: `Xóa "<b>${student.displayName}</b>" khỏi lớp?<br><small>Họ có thể tham gia lại bằng link.</small>`,
+            icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'Xóa', cancelButtonText: 'Hủy',
+        });
+        if (!r.isConfirmed) return;
+        await updateDoc(doc(db, 'users', student.uid), { teacherId: null, teacherName: null, blocked: false });
+        setStudents(prev => prev.filter(s => s.uid !== student.uid));
+        setStats(prev => ({ ...prev, studentCount: prev.studentCount - 1 }));
+    };
+
+    // ===== Settings =====
+    const handleUpdateSlug = async () => {
+        const { value } = await Swal.fire({
+            title: 'Đổi link lớp học',
+            input: 'text',
+            inputLabel: 'Nhập slug mới (chỉ chữ thường, số, dấu gạch ngang)',
+            inputValue: slug || '',
+            inputPlaceholder: 'vd: nguyen-van-a',
+            showCancelButton: true,
+            confirmButtonText: 'Cập nhật',
+            cancelButtonText: 'Hủy',
+            inputValidator: (val) => {
+                if (!val || !/^[a-z0-9-]+$/.test(val)) return 'Slug chỉ gồm chữ thường, số và dấu gạch ngang';
+            }
+        });
+        if (!value) return;
+        await updateDoc(doc(db, 'users', user.uid), { teacherSlug: value });
+        await refreshProfile();
+        Swal.fire({ icon: 'success', title: 'Đã cập nhật!', text: `Link mới: /t/${value}`, timer: 2000, showConfirmButton: false });
+    };
+
+    const handleUpdateSchool = async () => {
+        const { value } = await Swal.fire({
+            title: 'Cập nhật tên trường',
+            input: 'text',
+            inputValue: userProfile?.schoolName || '',
+            inputPlaceholder: 'VD: THPT Nguyễn Huệ',
+            showCancelButton: true,
+            confirmButtonText: 'Cập nhật',
+            cancelButtonText: 'Hủy',
+        });
+        if (value === undefined) return;
+        await updateDoc(doc(db, 'users', user.uid), { schoolName: value.trim() || null });
+        await refreshProfile();
+        Swal.fire({ icon: 'success', title: 'Đã cập nhật!', timer: 1500, showConfirmButton: false });
     };
 
     const filtered = exams
@@ -121,46 +187,50 @@ export default function TeacherDashboard() {
             )}
             {daysLeft !== null && daysLeft <= 7 && daysLeft > 0 && (
                 <div className="alert alert-warning" style={{ marginBottom: 20 }}>
-                    <i className="bi bi-exclamation-triangle"></i> Gói đăng ký sẽ hết hạn trong <strong>{daysLeft} ngày</strong>. Liên hệ admin để gia hạn.
+                    <i className="bi bi-exclamation-triangle"></i> Gói hết hạn trong <strong>{daysLeft} ngày</strong>. Liên hệ admin.
                 </div>
             )}
             {userProfile?.teacherStatus === 'expired' && (
                 <div className="alert alert-danger" style={{ marginBottom: 20 }}>
-                    <i className="bi bi-x-octagon"></i> Gói đăng ký đã hết hạn. Bạn không thể mở đề mới. Liên hệ admin.
+                    <i className="bi bi-x-octagon"></i> Gói đã hết hạn. Không thể mở đề mới. Liên hệ admin.
                 </div>
             )}
 
-            {/* Portal link */}
+            {/* Portal link bar */}
             {portalUrl && (
                 <div className="card" style={{ marginBottom: 20, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <i className="bi bi-link-45deg" style={{ fontSize: '1.2rem', color: 'var(--primary)' }}></i>
-                        <span style={{ fontSize: '0.9rem' }}>Link lớp học:</span>
+                        <span style={{ fontSize: '0.9rem' }}>Link cho học sinh:</span>
                         <code style={{ fontSize: '0.85rem', background: 'var(--bg)', padding: '2px 8px', borderRadius: 4 }}>/t/{slug}</code>
                     </div>
                     <button className="btn btn-sm btn-primary" onClick={copyPortalLink}>
-                        <i className="bi bi-clipboard"></i> Copy link
+                        <i className="bi bi-clipboard"></i> Copy
                     </button>
                 </div>
             )}
 
             <div className="stats-grid">
-                <StatsCard icon="journal-text" label="Tổng đề thi" value={stats.total} color="primary" delay={0} />
+                <StatsCard icon="journal-text" label="Tổng đề" value={stats.total} color="primary" delay={0} />
                 <StatsCard icon="broadcast" label="Đang mở" value={stats.active} color="success" delay={1} />
                 <StatsCard icon="people-fill" label="Học sinh" value={stats.studentCount} color="cool" delay={2} />
                 <StatsCard icon="bar-chart" label="Lượt thi" value={stats.totalSessions} color="warm" delay={3} />
             </div>
 
-            {/* Tab switch */}
+            {/* Tab navigation */}
             <div className="tab-nav" style={{ marginBottom: 16 }}>
-                <button className={`tab-btn ${activeTab === 'exams' ? 'active' : ''}`} onClick={() => setActiveTab('exams')}>
-                    <i className="bi bi-journal-text"></i> Kho đề thi
+                <button className={`tab-btn ${activeTab === 'exams' ? 'active' : ''}`} onClick={() => { setActiveTab('exams'); setSearch(''); }}>
+                    <i className="bi bi-journal-text"></i> Đề thi
                 </button>
-                <button className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`} onClick={() => setActiveTab('students')}>
+                <button className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); setSearch(''); }}>
                     <i className="bi bi-people"></i> Học sinh ({stats.studentCount})
+                </button>
+                <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setSearch(''); }}>
+                    <i className="bi bi-gear"></i> Cài đặt
                 </button>
             </div>
 
+            {/* ===== EXAMS TAB ===== */}
             {activeTab === 'exams' && (
                 <>
                     <div className="section-header">
@@ -176,22 +246,22 @@ export default function TeacherDashboard() {
                                 { key: 'all', label: 'Tất cả', count: exams.length },
                                 { key: 'active', label: 'Đang mở', count: stats.active },
                                 { key: 'draft', label: 'Nháp', count: stats.draft },
-                            ].map(tab => (
-                                <button key={tab.key} className={`filter-tab ${filter === tab.key ? 'active' : ''}`} onClick={() => setFilter(tab.key)}>
-                                    {tab.label} <span className="filter-count">{tab.count}</span>
+                            ].map(t => (
+                                <button key={t.key} className={`filter-tab ${filter === t.key ? 'active' : ''}`} onClick={() => setFilter(t.key)}>
+                                    {t.label} <span className="filter-count">{t.count}</span>
                                 </button>
                             ))}
                         </div>
                         <div className="search-box">
                             <i className="bi bi-search"></i>
-                            <input type="text" placeholder="Tìm kiếm đề..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                            <input type="text" placeholder="Tìm đề..." value={search} onChange={(e) => setSearch(e.target.value)} />
                         </div>
                     </div>
 
                     {filtered.length === 0 ? (
                         <div className="empty-state">
                             <i className="bi bi-journal-plus"></i>
-                            <p>{exams.length === 0 ? 'Chưa có đề thi nào.' : 'Không tìm thấy đề.'}</p>
+                            <p>{exams.length === 0 ? 'Chưa có đề thi nào.' : 'Không tìm thấy.'}</p>
                             {exams.length === 0 && subActive && (
                                 <Link to="/teacher/upload" className="btn btn-primary"><i className="bi bi-plus-lg"></i> Tạo đề đầu tiên</Link>
                             )}
@@ -228,10 +298,11 @@ export default function TeacherDashboard() {
                 </>
             )}
 
+            {/* ===== STUDENTS TAB ===== */}
             {activeTab === 'students' && (
                 <div>
                     <div className="filter-bar" style={{ marginBottom: 16 }}>
-                        <div className="search-box">
+                        <div className="search-box" style={{ flex: 1 }}>
                             <i className="bi bi-search"></i>
                             <input type="text" placeholder="Tìm học sinh..." value={search} onChange={(e) => setSearch(e.target.value)} />
                         </div>
@@ -240,26 +311,56 @@ export default function TeacherDashboard() {
                     {filteredStudents.length === 0 ? (
                         <div className="empty-state">
                             <i className="bi bi-people"></i>
-                            <p>Chưa có học sinh nào tham gia.</p>
-                            {portalUrl && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Chia sẻ link <strong>/t/{slug}</strong> để học sinh tham gia.</p>}
+                            <p>{students.length === 0 ? 'Chưa có học sinh nào.' : 'Không tìm thấy.'}</p>
+                            {students.length === 0 && portalUrl && (
+                                <div style={{ marginTop: 12 }}>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 8 }}>Chia sẻ link cho học sinh:</p>
+                                    <button className="btn btn-primary" onClick={copyPortalLink}><i className="bi bi-clipboard"></i> Copy link lớp</button>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="card">
                             <div className="table-responsive">
                                 <table className="data-table">
-                                    <thead><tr><th>#</th><th>Họ tên</th><th>Email</th><th>Streak</th><th>Bài làm</th><th>Ngày tham gia</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Học sinh</th>
+                                            <th>Email</th>
+                                            <th>Bài đã thi</th>
+                                            <th>Trạng thái</th>
+                                            <th style={{ textAlign: 'right' }}>Thao tác</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>
                                         {filteredStudents.map((s, idx) => (
-                                            <tr key={s.uid}>
+                                            <tr key={s.uid} style={{ opacity: s.blocked ? 0.6 : 1 }}>
                                                 <td>{idx + 1}</td>
-                                                <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    {s.photoURL && <img src={s.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} referrerPolicy="no-referrer" />}
-                                                    <span style={{ fontWeight: 600 }}>{s.displayName || 'Ẩn danh'}</span>
+                                                <td>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        {s.photoURL && <img src={s.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} referrerPolicy="no-referrer" />}
+                                                        <span style={{ fontWeight: 600 }}>{s.displayName || 'Ẩn danh'}</span>
+                                                    </div>
                                                 </td>
                                                 <td><small style={{ color: 'var(--text-muted)' }}>{s.email}</small></td>
-                                                <td>{s.streak || 0} 🔥</td>
-                                                <td>{s.totalQuizzes || 0}</td>
-                                                <td><small style={{ color: 'var(--text-muted)' }}>{s.createdAt ? new Date(s.createdAt.toDate()).toLocaleDateString('vi-VN') : '—'}</small></td>
+                                                <td>{s.quizCount || 0}</td>
+                                                <td>
+                                                    {s.blocked
+                                                        ? <span className="stat-badge expired"><i className="bi bi-lock"></i> Khóa</span>
+                                                        : <span className="stat-badge active">Hoạt động</span>
+                                                    }
+                                                </td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                                                        <button className={`btn btn-sm ${s.blocked ? 'btn-success-soft' : 'btn-warning-soft'}`} onClick={() => handleBlockStudent(s)} title={s.blocked ? 'Mở khóa' : 'Khóa'}>
+                                                            <i className={`bi bi-${s.blocked ? 'unlock' : 'lock'}`}></i>
+                                                        </button>
+                                                        <button className="btn btn-sm btn-danger-soft" onClick={() => handleRemoveStudent(s)} title="Xóa khỏi lớp">
+                                                            <i className="bi bi-person-x"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -267,6 +368,94 @@ export default function TeacherDashboard() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ===== SETTINGS TAB ===== */}
+            {activeTab === 'settings' && (
+                <div style={{ maxWidth: 600 }}>
+                    <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.1rem', marginBottom: 16 }}><i className="bi bi-person-circle"></i> Thông tin</h3>
+
+                            <div className="settings-row">
+                                <div>
+                                    <div className="settings-label">Tên hiển thị</div>
+                                    <div className="settings-value">{userProfile?.displayName}</div>
+                                </div>
+                            </div>
+
+                            <div className="settings-row">
+                                <div>
+                                    <div className="settings-label">Email</div>
+                                    <div className="settings-value">{userProfile?.email}</div>
+                                </div>
+                            </div>
+
+                            <div className="settings-row">
+                                <div>
+                                    <div className="settings-label">Tên trường / Tổ chức</div>
+                                    <div className="settings-value">{userProfile?.schoolName || <em style={{ color: 'var(--text-muted)' }}>Chưa đặt</em>}</div>
+                                </div>
+                                <button className="btn btn-sm btn-outline" onClick={handleUpdateSchool}>
+                                    <i className="bi bi-pencil"></i> Sửa
+                                </button>
+                            </div>
+
+                            <div className="settings-row">
+                                <div>
+                                    <div className="settings-label">Link lớp học</div>
+                                    <div className="settings-value">{portalUrl || <em style={{ color: 'var(--text-muted)' }}>Chưa có</em>}</div>
+                                </div>
+                                <button className="btn btn-sm btn-outline" onClick={handleUpdateSlug}>
+                                    <i className="bi bi-pencil"></i> Sửa
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div style={{ padding: 20 }}>
+                            <h3 style={{ fontSize: '1.1rem', marginBottom: 16 }}><i className="bi bi-credit-card"></i> Gói đăng ký</h3>
+
+                            <div className="settings-row">
+                                <div>
+                                    <div className="settings-label">Trạng thái</div>
+                                    <div className="settings-value">
+                                        {userProfile?.teacherStatus === 'trial' && <span className="stat-badge trial">Dùng thử</span>}
+                                        {userProfile?.teacherStatus === 'active' && <span className="stat-badge active">Hoạt động</span>}
+                                        {userProfile?.teacherStatus === 'expired' && <span className="stat-badge expired">Hết hạn</span>}
+                                        {!userProfile?.teacherStatus && <span className="stat-badge pending">Chưa xác định</span>}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {userProfile?.subscriptionMonths && (
+                                <div className="settings-row">
+                                    <div>
+                                        <div className="settings-label">Gói</div>
+                                        <div className="settings-value">{userProfile.subscriptionMonths} tháng</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {subEnd && (
+                                <div className="settings-row">
+                                    <div>
+                                        <div className="settings-label">Hết hạn</div>
+                                        <div className="settings-value">
+                                            {subEnd.toLocaleDateString('vi-VN')}
+                                            {daysLeft > 0 && <small style={{ color: 'var(--text-muted)', marginLeft: 6 }}>({daysLeft} ngày)</small>}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 12 }}>
+                                Liên hệ quản trị viên để gia hạn hoặc nâng cấp gói.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

@@ -9,7 +9,10 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && (
         request.auth.uid == userId ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        // Teachers can update their own students (block, remove)
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher'
+         && resource.data.teacherId == request.auth.uid)
       );
     }
 

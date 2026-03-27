@@ -8,7 +8,7 @@ import Swal from 'sweetalert2';
 
 export default function LoginPage() {
     const { user, userProfile, loading, signInWithGoogle, refreshProfile } = useAuth();
-    const [showTeacherReg, setShowTeacherReg] = useState(false);
+    const [step, setStep] = useState('main'); // 'main' | 'register'
     const [schoolName, setSchoolName] = useState('');
     const [registering, setRegistering] = useState(false);
 
@@ -16,6 +16,7 @@ export default function LoginPage() {
         return <div className="loading-screen"><div className="spinner"></div></div>;
     }
 
+    // Redirect logged-in users
     if (user && userProfile) {
         if (userProfile.role === 'admin') return <Navigate to="/admin" replace />;
         if (userProfile.role === 'teacher') return <Navigate to="/teacher" replace />;
@@ -29,21 +30,36 @@ export default function LoginPage() {
                             <p>Tài khoản giáo viên của bạn đang được quản trị viên xem xét.</p>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 12 }}>{user.email}</p>
                         </div>
-                        <button className="btn btn-outline" onClick={async () => { await refreshProfile(); }} style={{ width: '100%', marginTop: 16 }}>
+                        <button className="btn btn-primary" onClick={async () => { await refreshProfile(); }} style={{ width: '100%', marginTop: 16 }}>
                             <i className="bi bi-arrow-clockwise"></i> Kiểm tra lại
                         </button>
                     </motion.div>
                 </div>
             );
         }
-        return <Navigate to="/student" replace />;
+        // Student role on main login → redirect to teacher login context
+        // They shouldn't be here, but if they are, show message
+        return (
+            <div className="login-page">
+                <motion.div className="login-card" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+                    <div className="login-header">
+                        <div className="login-logo">👋</div>
+                        <h1>Xin chào, {user.displayName}</h1>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Trang này dành cho giáo viên.</p>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
+                            Nếu bạn là <strong>học sinh</strong>, hãy truy cập link lớp học từ giáo viên của bạn.
+                        </p>
+                    </div>
+                    <button className="btn btn-outline" onClick={() => setStep('register')} style={{ width: '100%', marginTop: 12 }}>
+                        <i className="bi bi-person-workspace"></i> Tôi muốn đăng ký Giáo viên
+                    </button>
+                </motion.div>
+            </div>
+        );
     }
 
     const handleTeacherRegister = async () => {
-        if (!user) {
-            await signInWithGoogle();
-            return;
-        }
+        if (!user) { await signInWithGoogle(); return; }
         setRegistering(true);
         try {
             await updateDoc(doc(db, 'users', user.uid), {
@@ -51,17 +67,10 @@ export default function LoginPage() {
                 schoolName: schoolName.trim() || null,
             });
             await refreshProfile();
-            Swal.fire({
-                icon: 'info',
-                title: 'Đã gửi yêu cầu!',
-                text: 'Quản trị viên sẽ xem xét và duyệt tài khoản của bạn.',
-                confirmButtonColor: '#5b5ea6',
-            });
+            Swal.fire({ icon: 'info', title: 'Đã gửi yêu cầu!', text: 'Quản trị viên sẽ duyệt tài khoản bạn.', confirmButtonColor: '#5b5ea6' });
         } catch (err) {
             Swal.fire('Lỗi', err.message, 'error');
-        } finally {
-            setRegistering(false);
-        }
+        } finally { setRegistering(false); }
     };
 
     return (
@@ -70,10 +79,10 @@ export default function LoginPage() {
                 <div className="login-header">
                     <div className="login-logo">📝</div>
                     <h1>Thi Online</h1>
-                    <p>Hệ thống thi trắc nghiệm trực tuyến</p>
+                    <p>Nền tảng thi trắc nghiệm trực tuyến dành cho Giáo viên</p>
                 </div>
 
-                {!showTeacherReg ? (
+                {step === 'main' && (
                     <>
                         <button className="btn-google" onClick={signInWithGoogle}>
                             <svg width="20" height="20" viewBox="0 0 48 48">
@@ -82,26 +91,33 @@ export default function LoginPage() {
                                 <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                                 <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                             </svg>
-                            Đăng nhập (Học sinh)
+                            Đăng nhập Giáo viên
                         </button>
 
                         <div className="login-divider"><span>hoặc</span></div>
 
-                        <button className="btn btn-outline" onClick={() => setShowTeacherReg(true)} style={{ width: '100%' }}>
-                            <i className="bi bi-person-workspace"></i> Đăng ký Giáo viên
+                        <button className="btn btn-outline" onClick={() => setStep('register')} style={{ width: '100%' }}>
+                            <i className="bi bi-person-plus"></i> Đăng ký tài khoản Giáo viên
                         </button>
 
                         <div className="login-features">
-                            <div className="login-feature"><i className="bi bi-lightning-charge"></i><span>Thi nhanh, chấm tự động</span></div>
-                            <div className="login-feature"><i className="bi bi-trophy"></i><span>Xếp hạng & thành tích</span></div>
-                            <div className="login-feature"><i className="bi bi-graph-up"></i><span>Theo dõi tiến bộ</span></div>
+                            <div className="login-feature"><i className="bi bi-bank"></i><span>Quản lý ngân hàng đề thi</span></div>
+                            <div className="login-feature"><i className="bi bi-people"></i><span>Quản lý học sinh riêng</span></div>
+                            <div className="login-feature"><i className="bi bi-bar-chart"></i><span>Thống kê kết quả chi tiết</span></div>
+                            <div className="login-feature"><i className="bi bi-link-45deg"></i><span>Link lớp học riêng cho bạn</span></div>
                         </div>
+
+                        <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 16 }}>
+                            Học sinh truy cập bằng link lớp từ giáo viên
+                        </p>
                     </>
-                ) : (
+                )}
+
+                {step === 'register' && (
                     <>
                         <div style={{ textAlign: 'left', marginBottom: 16 }}>
                             <h3 style={{ fontSize: '1.1rem', marginBottom: 4 }}>Đăng ký Giáo viên</h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Đăng nhập Google, sau đó chờ admin duyệt.</p>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Đăng nhập Google → Nhập thông tin → Chờ admin duyệt.</p>
                         </div>
 
                         {user ? (
@@ -118,7 +134,7 @@ export default function LoginPage() {
                                     <input type="text" className="form-input" placeholder="VD: THPT Nguyễn Huệ" value={schoolName} onChange={e => setSchoolName(e.target.value)} />
                                 </div>
                                 <button className="btn btn-primary" onClick={handleTeacherRegister} disabled={registering} style={{ width: '100%' }}>
-                                    {registering ? 'Đang gửi...' : <><i className="bi bi-send"></i> Gửi yêu cầu</>}
+                                    {registering ? 'Đang gửi...' : <><i className="bi bi-send"></i> Gửi yêu cầu duyệt</>}
                                 </button>
                             </div>
                         ) : (
@@ -133,7 +149,7 @@ export default function LoginPage() {
                             </button>
                         )}
 
-                        <button className="btn btn-outline" onClick={() => setShowTeacherReg(false)} style={{ width: '100%', marginTop: 12 }}>
+                        <button className="btn btn-outline" onClick={() => setStep('main')} style={{ width: '100%', marginTop: 12 }}>
                             <i className="bi bi-arrow-left"></i> Quay lại
                         </button>
                     </>
