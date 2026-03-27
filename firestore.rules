@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Exams collection
+    match /exams/{examId} {
+      // Anyone authenticated can read active exams
+      allow read: if request.auth != null;
+      // Only teachers can create/update/delete their own exams
+      allow create: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
+      allow update, delete: if request.auth != null
+        && resource.data.teacherId == request.auth.uid;
+
+      // Questions subcollection
+      match /questions/{questionId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
+      }
+    }
+
+    // Quiz sessions (student attempts)
+    match /sessions/{sessionId} {
+      // Students can read their own sessions, teachers can read sessions for their exams
+      allow read: if request.auth != null
+        && (resource.data.studentId == request.auth.uid
+            || resource.data.teacherId == request.auth.uid);
+      // Students can create sessions
+      allow create: if request.auth != null
+        && request.resource.data.studentId == request.auth.uid;
+      // Students can update their own in-progress sessions
+      allow update: if request.auth != null
+        && resource.data.studentId == request.auth.uid;
+    }
+  }
+}
