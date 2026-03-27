@@ -85,20 +85,21 @@ export default function UploadExamPage() {
     const [imageFiles, setImageFiles] = useState([]);
     const [imageMap, setImageMap] = useState({});
     const [activeQ, setActiveQ] = useState(0);
-    const [editingQ, setEditingQ] = useState(-1);
+    const [editingQ, setEditingQ] = useState(-1); // -1 = no dialog
     const [leftTab, setLeftTab] = useState('edit');
     const [sourceText, setSourceText] = useState('');
     const [saving, setSaving] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showExplIdx, setShowExplIdx] = useState(new Set()); // which preview cards have explanation open
 
-    // Math dialog
-    const [mathDialog, setMathDialog] = useState(null); // { qIdx, field, cIdx? }
+    // Math sub-dialog inside edit dialog
+    const [mathTarget, setMathTarget] = useState(null); // { field, cIdx? }
     const [mathLatex, setMathLatex] = useState('');
     const [mathPaletteGroup, setMathPaletteGroup] = useState(0);
 
     const previewRefs = useRef([]);
     const editorRefs = useRef([]);
-    const fieldRefs = useRef({}); // textarea refs for cursor insertion
+    const fieldRefs = useRef({});
 
     // ═══ File handling ═══
     const handleParse = useCallback(async (f) => {
@@ -118,9 +119,7 @@ export default function UploadExamPage() {
         } catch (err) {
             console.error(err);
             Swal.fire('Lỗi đọc file', err.message, 'error');
-        } finally {
-            setParsing(false);
-        }
+        } finally { setParsing(false); }
     }, []);
 
     const handleFileChange = useCallback((f) => {
@@ -199,49 +198,58 @@ export default function UploadExamPage() {
         updateQ(idx, { type: newType });
     }, [updateQ]);
 
-    // ═══ Math dialog ═══
-    const openMath = useCallback((qIdx, field, cIdx) => {
-        setMathDialog({ qIdx, field, cIdx });
+    // ═══ Math sub-dialog ═══
+    const openMath = useCallback((field, cIdx) => {
+        setMathTarget({ field, cIdx });
         setMathLatex('');
         setMathPaletteGroup(0);
     }, []);
 
     const insertMathSymbol = useCallback((latex) => {
         setMathLatex(prev => {
-            const placeholder = '\u25AB';
-            const idx = prev.indexOf(placeholder);
+            const ph = '\u25AB';
+            const idx = prev.indexOf(ph);
             if (idx >= 0) return prev.slice(0, idx) + latex + prev.slice(idx + 1);
             return prev + latex;
         });
     }, []);
 
     const confirmMath = useCallback(() => {
-        if (!mathDialog || !mathLatex.trim()) return;
-        const { qIdx, field, cIdx } = mathDialog;
+        if (!mathTarget || editingQ < 0 || !mathLatex.trim()) return;
+        const i = editingQ;
         const tex = '$$' + mathLatex.replace(/\u25AB/g, '') + '$$';
 
-        if (field === 'content') {
-            const q = questions[qIdx];
-            const ta = fieldRefs.current[`q${qIdx}-content`];
+        if (mathTarget.field === 'content') {
+            const q = questions[i];
+            const ta = fieldRefs.current[`q-content`];
             const old = q.content_text || '';
             const pos = ta?.selectionStart ?? old.length;
-            updateQ(qIdx, { content_text: old.slice(0, pos) + tex + old.slice(pos) });
-        } else if (field === 'choice') {
-            const c = questions[qIdx].choices[cIdx];
-            const ta = fieldRefs.current[`q${qIdx}-c${cIdx}`];
+            updateQ(i, { content_text: old.slice(0, pos) + tex + old.slice(pos) });
+        } else if (mathTarget.field === 'choice') {
+            const c = questions[i].choices[mathTarget.cIdx];
+            const ta = fieldRefs.current[`q-c${mathTarget.cIdx}`];
             const old = c.text || '';
             const pos = ta?.selectionStart ?? old.length;
-            updateChoice(qIdx, cIdx, { text: old.slice(0, pos) + tex + old.slice(pos) });
-        } else if (field === 'explanation') {
-            const q = questions[qIdx];
-            const ta = fieldRefs.current[`q${qIdx}-expl`];
+            updateChoice(i, mathTarget.cIdx, { text: old.slice(0, pos) + tex + old.slice(pos) });
+        } else if (mathTarget.field === 'explanation') {
+            const q = questions[i];
+            const ta = fieldRefs.current[`q-expl`];
             const old = q.explanation || '';
             const pos = ta?.selectionStart ?? old.length;
-            updateQ(qIdx, { explanation: old.slice(0, pos) + tex + old.slice(pos) });
+            updateQ(i, { explanation: old.slice(0, pos) + tex + old.slice(pos) });
         }
-        setMathDialog(null);
+        setMathTarget(null);
         setMathLatex('');
-    }, [mathDialog, mathLatex, questions, updateQ, updateChoice]);
+    }, [mathTarget, editingQ, mathLatex, questions, updateQ, updateChoice]);
+
+    // ═══ Explanation toggle ═══
+    const toggleExplanation = useCallback((idx) => {
+        setShowExplIdx(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx); else next.add(idx);
+            return next;
+        });
+    }, []);
 
     // ═══ Source mode ═══
     const applySource = useCallback(() => {
@@ -281,11 +289,6 @@ export default function UploadExamPage() {
         }
         return { total, byType, valid, invalid: total - valid };
     }, [questions, getIssues]);
-
-    const scrollToPreview = (idx) => {
-        setActiveQ(idx);
-        previewRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    };
 
     // ═══ Save ═══
     const handleSave = async () => {
@@ -338,10 +341,11 @@ export default function UploadExamPage() {
         } catch (err) {
             console.error(err);
             Swal.fire('Lỗi', err.message, 'error');
-        } finally {
-            setSaving(false);
-        }
+        } finally { setSaving(false); }
     };
+
+    // Current editing question
+    const eq = editingQ >= 0 && questions ? questions[editingQ] : null;
 
     // ═══ STEP 1: Upload ═══
     if (!questions) {
@@ -378,29 +382,21 @@ export default function UploadExamPage() {
                     <div className="upload-format-info">
                         <h4><i className="bi bi-info-circle"></i> Định dạng chuẩn</h4>
                         <div className="format-cols">
-                            <div className="format-col">
-                                <h5>Trắc nghiệm</h5>
-                                <pre>{'Câu 1: Nội dung\nA. Đáp án A\nB. Đáp án B (gạch chân)\nC. Đáp án C\nD. Đáp án D'}</pre>
-                            </div>
-                            <div className="format-col">
-                                <h5>Đúng/Sai</h5>
-                                <pre>{'Câu 2: Nội dung\na) Mệnh đề 1 (gạch chân=Đ)\nb) Mệnh đề 2\nc) Mệnh đề 3\nd) Mệnh đề 4'}</pre>
-                            </div>
-                            <div className="format-col">
-                                <h5>Tự luận ngắn</h5>
-                                <pre>{'Câu 3: Nội dung\nĐáp án: 42\nLời giải: Chi tiết...'}</pre>
-                            </div>
+                            <div className="format-col"><h5>Trắc nghiệm</h5><pre>{'Câu 1: Nội dung\nA. Đáp án A\nB. Đáp án B (gạch chân)\nC. Đáp án C\nD. Đáp án D'}</pre></div>
+                            <div className="format-col"><h5>Đúng/Sai</h5><pre>{'Câu 2: Nội dung\na) Mệnh đề 1 (gạch chân=Đ)\nb) Mệnh đề 2\nc) Mệnh đề 3\nd) Mệnh đề 4'}</pre></div>
+                            <div className="format-col"><h5>Tự luận ngắn</h5><pre>{'Câu 3: Nội dung\nĐáp án: 42\nLời giải: Chi tiết...'}</pre></div>
                         </div>
-                        <small><b>Công thức:</b> Hỗ trợ Equation Editor (OMML) & MathType. <b>Đáp án đúng:</b> Gạch chân trong Word hoặc dòng "Đáp án: X"</small>
+                        <small><b>Công thức:</b> Hỗ trợ Equation Editor (OMML) & MathType. <b>Đáp án đúng:</b> Gạch chân hoặc dòng "Đáp án: X"</small>
                     </div>
                 </div>
             </div>
         );
     }
 
-    // ═══ STEP 2: Split-pane Editor ═══
+    // ═══ STEP 2: Editor ═══
     return (
         <div className="exam-editor">
+            {/* Header */}
             <div className="ee-header">
                 <div className="ee-header-left">
                     <button className="btn btn-sm btn-ghost" onClick={() => { setQuestions(null); setFile(null); setEditingQ(-1); }} title="Quay lại">
@@ -454,7 +450,7 @@ export default function UploadExamPage() {
             )}
 
             <div className="ee-body">
-                {/* ═══ LEFT PANEL ═══ */}
+                {/* ═══ LEFT: Question list ═══ */}
                 <div className="ee-left">
                     <div className="ee-left-tabs">
                         <button className={'ee-tab' + (leftTab === 'edit' ? ' active' : '')} onClick={() => setLeftTab('edit')}>
@@ -469,14 +465,10 @@ export default function UploadExamPage() {
                             <div className="ee-question-list">
                                 {questions.map((q, i) => {
                                     const issues = getIssues(q);
-                                    const isEditing = editingQ === i;
-                                    const isActive = activeQ === i;
-                                    const qImgs = extractImgTags(q.content_html);
                                     return (
                                         <div key={i} ref={el => editorRefs.current[i] = el}
-                                            className={'eq-card' + (isActive ? ' active' : '') + (isEditing ? ' editing' : '') + (issues.length ? ' has-issues' : ' valid')}
-                                            onClick={() => scrollToPreview(i)}>
-                                            {/* Card header */}
+                                            className={'eq-card' + (activeQ === i ? ' active' : '') + (issues.length ? ' has-issues' : ' valid')}
+                                            onClick={() => { setActiveQ(i); previewRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
                                             <div className="eq-header">
                                                 <span className="eq-num">Câu {q.number}</span>
                                                 <span className="eq-type-badge" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
@@ -486,176 +478,27 @@ export default function UploadExamPage() {
                                                     ? <i className="bi bi-check-circle-fill eq-valid-icon"></i>
                                                     : <i className="bi bi-exclamation-triangle-fill eq-issue-icon" title={issues.join(', ')}></i>}
                                                 <div className="eq-actions">
-                                                    <button className="eq-btn" onClick={e => { e.stopPropagation(); setEditingQ(isEditing ? -1 : i); }} title={isEditing ? 'Thu gọn' : 'Sửa'}>
-                                                        <i className={'bi bi-' + (isEditing ? 'chevron-up' : 'pencil')}></i>
+                                                    <button className="eq-btn primary" onClick={e => { e.stopPropagation(); setEditingQ(i); setActiveQ(i); }} title="Chỉnh sửa">
+                                                        <i className="bi bi-pencil"></i>
                                                     </button>
                                                     <button className="eq-btn danger" onClick={e => { e.stopPropagation(); deleteQuestion(i); }} title="Xóa">
                                                         <i className="bi bi-trash3"></i>
                                                     </button>
                                                 </div>
                                             </div>
-
-                                            {/* Collapsed view */}
-                                            {!isEditing && (
-                                                <div className="eq-compact">
-                                                    <p className="eq-preview-text">{(q.content_text || '').slice(0, 120)}{(q.content_text || '').length > 120 ? '...' : ''}</p>
-                                                    {q.choices.length > 0 && (
-                                                        <div className="eq-choices-inline">
-                                                            {q.choices.map((c, j) => (
-                                                                <span key={j} className={'eq-choice-pill' + (q.correct_answer === c.letter || (q.type === 'tf' && q.correct_answer?.[j] === 'D') ? ' correct' : '')}>
-                                                                    {q.type === 'tf' ? c.letter + ')' : c.letter + '.'} {(c.text || '').slice(0, 25)}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {issues.length > 0 && <div className="eq-issues">{issues.map((iss, j) => <span key={j}>\u26A0 {iss}</span>)}</div>}
-                                                </div>
-                                            )}
-
-                                            {/* ═══ EXPANDED EDIT PANEL ═══ */}
-                                            {isEditing && (
-                                                <div className="eq-edit" onClick={e => e.stopPropagation()}>
-                                                    {/* Toolbar */}
-                                                    <div className="eq-toolbar">
-                                                        <select value={q.type} onChange={e => changeType(i, e.target.value)} className="eq-type-select">
-                                                            <option value="mcq">Trắc nghiệm</option>
-                                                            <option value="tf">Đúng/Sai</option>
-                                                            <option value="short_answer">Tự luận ngắn</option>
-                                                        </select>
-                                                        <div className="eq-toolbar-sep" />
-                                                        <button className="eq-toolbar-btn" onClick={() => openMath(i, 'content')} title="Chèn công thức toán">
-                                                            <i className="bi bi-calculator"></i> Σ Công thức
-                                                        </button>
-                                                        <div className="eq-toolbar-hint">
-                                                            <code>$$...$$</code> = inline
-                                                        </div>
+                                            <div className="eq-compact">
+                                                <p className="eq-preview-text">{(q.content_text || '').slice(0, 120)}{(q.content_text || '').length > 120 ? '...' : ''}</p>
+                                                {q.choices.length > 0 && (
+                                                    <div className="eq-choices-inline">
+                                                        {q.choices.map((c, j) => (
+                                                            <span key={j} className={'eq-choice-pill' + (q.correct_answer === c.letter || (q.type === 'tf' && q.correct_answer?.[j] === 'D') ? ' correct' : '')}>
+                                                                {q.type === 'tf' ? c.letter + ')' : c.letter + '.'} {(c.text || '').slice(0, 30)}
+                                                            </span>
+                                                        ))}
                                                     </div>
-
-                                                    {/* Content editor */}
-                                                    <div className="eq-section">
-                                                        <label className="eq-label">Nội dung câu hỏi</label>
-                                                        <textarea
-                                                            ref={el => fieldRefs.current[`q${i}-content`] = el}
-                                                            value={q.content_text || ''}
-                                                            onChange={e => updateQ(i, { content_text: e.target.value })}
-                                                            rows={Math.max(3, Math.min(10, (q.content_text || '').split('\n').length + 1))}
-                                                            className="eq-textarea"
-                                                            placeholder="Nhập nội dung câu hỏi..." />
-                                                        {/* Mini live preview */}
-                                                        {(q.content_html || q.content_text || '').length > 0 && (
-                                                            <div className="eq-live-preview">
-                                                                <span className="eq-live-label"><i className="bi bi-eye"></i> Preview</span>
-                                                                <div className="eq-live-render" dangerouslySetInnerHTML={{
-                                                                    __html: renderLatex(q.content_html || escHtml(q.content_text || ''))
-                                                                }} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Images from DOCX */}
-                                                    {qImgs.length > 0 && (
-                                                        <div className="eq-section eq-images">
-                                                            <label className="eq-label"><i className="bi bi-image"></i> Hình ảnh ({qImgs.length})</label>
-                                                            <div className="eq-image-grid">
-                                                                {qImgs.map((img, j) => (
-                                                                    <div key={j} className="eq-image-thumb" dangerouslySetInnerHTML={{ __html: img }} />
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Choices */}
-                                                    {(q.type === 'mcq' || q.type === 'tf') && (
-                                                        <div className="eq-section">
-                                                            <label className="eq-label">Đáp án</label>
-                                                            <div className="eq-choices-edit-list">
-                                                                {q.choices.map((c, j) => {
-                                                                    const isCorrect = q.type === 'mcq' ? q.correct_answer === c.letter : q.correct_answer?.[j] === 'D';
-                                                                    const cImgs = extractImgTags(c.html);
-                                                                    return (
-                                                                        <div key={j} className={'eq-choice-edit' + (isCorrect ? ' correct' : '')}>
-                                                                            <div className="eq-choice-main">
-                                                                                {q.type === 'mcq' ? (
-                                                                                    <label className="eq-radio-wrap" title="Đáp án đúng">
-                                                                                        <input type="radio" name={'correct-' + i}
-                                                                                            checked={q.correct_answer === c.letter}
-                                                                                            onChange={() => setCorrectAnswer(i, c.letter)} />
-                                                                                        <span className={'eq-radio-dot' + (isCorrect ? ' checked' : '')} />
-                                                                                    </label>
-                                                                                ) : (
-                                                                                    <button className={'eq-tf-btn' + (isCorrect ? ' true' : '')}
-                                                                                        onClick={() => {
-                                                                                            const arr = (q.correct_answer || 'SSSS').split('');
-                                                                                            arr[j] = arr[j] === 'D' ? 'S' : 'D';
-                                                                                            setCorrectAnswer(i, arr.join(''));
-                                                                                        }}>
-                                                                                        {isCorrect ? '\u0110' : 'S'}
-                                                                                    </button>
-                                                                                )}
-                                                                                <span className="eq-choice-letter">{q.type === 'tf' ? c.letter + ')' : c.letter + '.'}</span>
-                                                                                <input type="text"
-                                                                                    ref={el => fieldRefs.current[`q${i}-c${j}`] = el}
-                                                                                    value={c.text || ''}
-                                                                                    onChange={e => updateChoice(i, j, { text: e.target.value })}
-                                                                                    className="eq-choice-input"
-                                                                                    placeholder="Nội dung..." />
-                                                                                <button className="eq-mini-btn" onClick={() => openMath(i, 'choice', j)} title="Công thức">
-                                                                                    <i className="bi bi-calculator"></i>
-                                                                                </button>
-                                                                                <button className="eq-mini-btn danger" onClick={() => removeChoice(i, j)} title="Xóa">
-                                                                                    <i className="bi bi-x-lg"></i>
-                                                                                </button>
-                                                                            </div>
-                                                                            {/* Choice inline preview */}
-                                                                            {((c.text || '').includes('$$') || cImgs.length > 0) && (
-                                                                                <div className="eq-choice-preview" dangerouslySetInnerHTML={{
-                                                                                    __html: renderLatex(c.html || escHtml(c.text || ''))
-                                                                                }} />
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                            <button className="eq-add-choice" onClick={() => addChoice(i)}>
-                                                                <i className="bi bi-plus-circle"></i> Thêm đáp án
-                                                            </button>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Short answer */}
-                                                    {q.type === 'short_answer' && (
-                                                        <div className="eq-section">
-                                                            <label className="eq-label">Đáp án</label>
-                                                            <input type="text" value={q.correct_answer || ''}
-                                                                onChange={e => setCorrectAnswer(i, e.target.value)}
-                                                                className="eq-input" placeholder="Nhập đáp án..." />
-                                                        </div>
-                                                    )}
-
-                                                    {/* Explanation */}
-                                                    <div className="eq-section eq-expl-section">
-                                                        <label className="eq-label">
-                                                            <i className="bi bi-lightbulb"></i> Lời giải <small>(không bắt buộc)</small>
-                                                            <button className="eq-mini-btn" onClick={() => openMath(i, 'explanation')} title="Công thức" style={{ marginLeft: 8 }}>
-                                                                <i className="bi bi-calculator"></i>
-                                                            </button>
-                                                        </label>
-                                                        <textarea
-                                                            ref={el => fieldRefs.current[`q${i}-expl`] = el}
-                                                            value={q.explanation || ''}
-                                                            onChange={e => updateQ(i, { explanation: e.target.value })}
-                                                            rows={2} className="eq-textarea"
-                                                            placeholder="Giải thích chi tiết..." />
-                                                        {(q.explanation || '').includes('$$') && (
-                                                            <div className="eq-live-preview small">
-                                                                <div className="eq-live-render" dangerouslySetInnerHTML={{
-                                                                    __html: renderLatex(q.explanation_html || escHtml(q.explanation || ''))
-                                                                }} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
+                                                )}
+                                                {issues.length > 0 && <div className="eq-issues">{issues.map((iss, j) => <span key={j}>{'\u26A0'} {iss}</span>)}</div>}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -671,7 +514,7 @@ export default function UploadExamPage() {
                     </div>
                 </div>
 
-                {/* ═══ RIGHT PANEL — Preview ═══ */}
+                {/* ═══ RIGHT: Preview ═══ */}
                 <div className="ee-right">
                     <div className="ee-right-header">
                         <i className="bi bi-eye"></i> Xem trước (góc nhìn học sinh)
@@ -679,15 +522,20 @@ export default function UploadExamPage() {
                     <div className="ee-preview-list">
                         {questions.map((q, i) => {
                             const issues = getIssues(q);
+                            const explOpen = showExplIdx.has(i);
+                            const hasExpl = q.explanation || q.explanation_html;
                             return (
                                 <div key={i} ref={el => previewRefs.current[i] = el}
                                     className={'ep-card' + (activeQ === i ? ' active' : '')}
-                                    onClick={() => { setActiveQ(i); setEditingQ(i); editorRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
+                                    onClick={() => { setActiveQ(i); editorRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
                                     <div className="ep-header">
                                         <span className="ep-num">Câu {q.number}</span>
                                         <span className="ep-type" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
                                             {TYPE_LABELS[q.type]}
                                         </span>
+                                        <button className="ep-edit-btn" onClick={e => { e.stopPropagation(); setEditingQ(i); setActiveQ(i); }} title="Chỉnh sửa">
+                                            <i className="bi bi-pencil"></i>
+                                        </button>
                                     </div>
                                     <div className="ep-content" dangerouslySetInnerHTML={{ __html: renderLatex(q.content_html || escHtml(q.content_text)) }} />
                                     {q.type === 'mcq' && q.choices.length > 0 && (
@@ -715,14 +563,29 @@ export default function UploadExamPage() {
                                     {q.type === 'short_answer' && q.correct_answer && (
                                         <div className="ep-answer"><i className="bi bi-pencil-square"></i> Đáp án: <b>{q.correct_answer}</b></div>
                                     )}
-                                    {q.explanation_html && (
-                                        <div className="ep-explanation">
-                                            <i className="bi bi-lightbulb"></i>
-                                            <span dangerouslySetInnerHTML={{ __html: renderLatex(q.explanation_html) }} />
+                                    {/* Explanation toggle */}
+                                    {hasExpl && (
+                                        <div className="ep-expl-wrap">
+                                            <button className={'ep-expl-toggle' + (explOpen ? ' open' : '')} onClick={e => { e.stopPropagation(); toggleExplanation(i); }}>
+                                                <i className={'bi bi-' + (explOpen ? 'chevron-up' : 'lightbulb')}></i>
+                                                {explOpen ? 'Ẩn lời giải' : 'Xem lời giải'}
+                                            </button>
+                                            <AnimatePresence>
+                                                {explOpen && (
+                                                    <motion.div className="ep-explanation"
+                                                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                                        style={{ overflow: 'hidden' }}>
+                                                        <div className="ep-expl-content" dangerouslySetInnerHTML={{ __html: renderLatex(q.explanation_html || escHtml(q.explanation || '')) }} />
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
                                     )}
+                                    {!hasExpl && (
+                                        <div className="ep-no-expl"><i className="bi bi-lightbulb"></i> Chưa có lời giải</div>
+                                    )}
                                     {issues.length > 0 && (
-                                        <div className="ep-issues">{issues.map((iss, j) => <span key={j}>\u26A0 {iss}</span>)}</div>
+                                        <div className="ep-issues">{issues.map((iss, j) => <span key={j}>{'\u26A0'} {iss}</span>)}</div>
                                     )}
                                 </div>
                             );
@@ -731,19 +594,196 @@ export default function UploadExamPage() {
                 </div>
             </div>
 
-            {/* ═══ MATH DIALOG ═══ */}
+            {/* ════════════════════════════════════════════════
+                EDIT DIALOG — full-screen modal with split view
+               ════════════════════════════════════════════════ */}
             <AnimatePresence>
-                {mathDialog && (
+                {eq && (
+                    <motion.div className="ed-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <motion.div className="ed-dialog" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}>
+                            {/* Dialog header */}
+                            <div className="ed-head">
+                                <div className="ed-head-left">
+                                    <span className="ed-head-num">Câu {eq.number}</span>
+                                    <select value={eq.type} onChange={e => changeType(editingQ, e.target.value)} className="ed-type-select">
+                                        <option value="mcq">Trắc nghiệm</option>
+                                        <option value="tf">Đúng/Sai</option>
+                                        <option value="short_answer">Tự luận ngắn</option>
+                                    </select>
+                                    {getIssues(eq).length === 0
+                                        ? <span className="ed-status ok"><i className="bi bi-check-circle-fill"></i> Hợp lệ</span>
+                                        : <span className="ed-status warn"><i className="bi bi-exclamation-triangle-fill"></i> {getIssues(eq).join(', ')}</span>}
+                                </div>
+                                <div className="ed-head-right">
+                                    <button className="ed-nav-btn" disabled={editingQ <= 0} onClick={() => setEditingQ(editingQ - 1)} title="Câu trước">
+                                        <i className="bi bi-chevron-left"></i>
+                                    </button>
+                                    <span className="ed-nav-label">{editingQ + 1} / {questions.length}</span>
+                                    <button className="ed-nav-btn" disabled={editingQ >= questions.length - 1} onClick={() => setEditingQ(editingQ + 1)} title="Câu sau">
+                                        <i className="bi bi-chevron-right"></i>
+                                    </button>
+                                    <button className="ed-close" onClick={() => setEditingQ(-1)} title="Đóng"><i className="bi bi-x-lg"></i></button>
+                                </div>
+                            </div>
+
+                            <div className="ed-body">
+                                {/* ── Left: Form ── */}
+                                <div className="ed-form">
+                                    {/* Content */}
+                                    <div className="ed-section">
+                                        <div className="ed-label-row">
+                                            <label className="ed-label"><i className="bi bi-card-text"></i> Nội dung câu hỏi</label>
+                                            <button className="ed-math-btn" onClick={() => openMath('content')}><i className="bi bi-calculator"></i> Σ</button>
+                                        </div>
+                                        <textarea
+                                            ref={el => fieldRefs.current[`q-content`] = el}
+                                            value={eq.content_text || ''}
+                                            onChange={e => updateQ(editingQ, { content_text: e.target.value })}
+                                            rows={Math.max(3, Math.min(12, (eq.content_text || '').split('\n').length + 1))}
+                                            className="ed-textarea" placeholder="Nhập nội dung câu hỏi..." />
+                                    </div>
+
+                                    {/* Images */}
+                                    {extractImgTags(eq.content_html).length > 0 && (
+                                        <div className="ed-section ed-imgs">
+                                            <label className="ed-label"><i className="bi bi-image"></i> Hình ảnh</label>
+                                            <div className="ed-img-row">
+                                                {extractImgTags(eq.content_html).map((img, j) => (
+                                                    <div key={j} className="ed-img-thumb" dangerouslySetInnerHTML={{ __html: img }} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Choices */}
+                                    {(eq.type === 'mcq' || eq.type === 'tf') && (
+                                        <div className="ed-section">
+                                            <label className="ed-label"><i className="bi bi-list-check"></i> Đáp án</label>
+                                            <div className="ed-choices">
+                                                {eq.choices.map((c, j) => {
+                                                    const isCorrect = eq.type === 'mcq' ? eq.correct_answer === c.letter : eq.correct_answer?.[j] === 'D';
+                                                    return (
+                                                        <div key={j} className={'ed-choice' + (isCorrect ? ' correct' : '')}>
+                                                            {eq.type === 'mcq' ? (
+                                                                <label className="ed-radio">
+                                                                    <input type="radio" name="ed-correct" checked={eq.correct_answer === c.letter}
+                                                                        onChange={() => setCorrectAnswer(editingQ, c.letter)} />
+                                                                    <span className={'ed-dot' + (isCorrect ? ' on' : '')} />
+                                                                </label>
+                                                            ) : (
+                                                                <button className={'ed-tf' + (isCorrect ? ' on' : '')}
+                                                                    onClick={() => {
+                                                                        const arr = (eq.correct_answer || 'SSSS').split('');
+                                                                        arr[j] = arr[j] === 'D' ? 'S' : 'D';
+                                                                        setCorrectAnswer(editingQ, arr.join(''));
+                                                                    }}>
+                                                                    {isCorrect ? '\u0110' : 'S'}
+                                                                </button>
+                                                            )}
+                                                            <span className="ed-cletter">{eq.type === 'tf' ? c.letter + ')' : c.letter + '.'}</span>
+                                                            <input type="text"
+                                                                ref={el => fieldRefs.current[`q-c${j}`] = el}
+                                                                value={c.text || ''}
+                                                                onChange={e => updateChoice(editingQ, j, { text: e.target.value })}
+                                                                className="ed-cinput" placeholder="Nội dung đáp án..." />
+                                                            <button className="ed-mini" onClick={() => openMath('choice', j)} title="Công thức"><i className="bi bi-calculator"></i></button>
+                                                            <button className="ed-mini danger" onClick={() => removeChoice(editingQ, j)} title="Xóa"><i className="bi bi-x-lg"></i></button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <button className="ed-add-choice" onClick={() => addChoice(editingQ)}>
+                                                <i className="bi bi-plus-circle"></i> Thêm đáp án
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Short answer */}
+                                    {eq.type === 'short_answer' && (
+                                        <div className="ed-section">
+                                            <label className="ed-label"><i className="bi bi-check2-circle"></i> Đáp án</label>
+                                            <input type="text" value={eq.correct_answer || ''} onChange={e => setCorrectAnswer(editingQ, e.target.value)}
+                                                className="ed-cinput full" placeholder="Nhập đáp án..." />
+                                        </div>
+                                    )}
+
+                                    {/* Explanation */}
+                                    <div className="ed-section ed-expl">
+                                        <div className="ed-label-row">
+                                            <label className="ed-label"><i className="bi bi-lightbulb"></i> Lời giải <small>(không bắt buộc)</small></label>
+                                            <button className="ed-math-btn" onClick={() => openMath('explanation')}><i className="bi bi-calculator"></i> Σ</button>
+                                        </div>
+                                        <textarea
+                                            ref={el => fieldRefs.current[`q-expl`] = el}
+                                            value={eq.explanation || ''}
+                                            onChange={e => updateQ(editingQ, { explanation: e.target.value })}
+                                            rows={3} className="ed-textarea" placeholder="Giải thích chi tiết cho câu này..." />
+                                    </div>
+                                </div>
+
+                                {/* ── Right: Live preview ── */}
+                                <div className="ed-preview">
+                                    <div className="ed-preview-label"><i className="bi bi-eye"></i> Xem trước (real-time)</div>
+                                    <div className="ed-preview-card">
+                                        <div className="ed-p-head">
+                                            <span className="ep-num">Câu {eq.number}</span>
+                                            <span className="ep-type" style={{ background: TYPE_COLORS[eq.type]?.bg, color: TYPE_COLORS[eq.type]?.color }}>
+                                                {TYPE_LABELS[eq.type]}
+                                            </span>
+                                        </div>
+                                        <div className="ed-p-content" dangerouslySetInnerHTML={{ __html: renderLatex(eq.content_html || escHtml(eq.content_text)) }} />
+                                        {eq.type === 'mcq' && eq.choices.length > 0 && (
+                                            <div className="ep-choices">
+                                                {eq.choices.map((c, j) => (
+                                                    <div key={j} className={'ep-choice' + (eq.correct_answer === c.letter ? ' correct' : '')}>
+                                                        <span className="ep-radio">{eq.correct_answer === c.letter ? '\u25CF' : '\u25CB'}</span>
+                                                        <span className="ep-letter">{c.letter}.</span>
+                                                        <span dangerouslySetInnerHTML={{ __html: renderLatex(c.html || escHtml(c.text)) }} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {eq.type === 'tf' && eq.choices.length > 0 && (
+                                            <div className="ep-choices">
+                                                {eq.choices.map((c, j) => (
+                                                    <div key={j} className={'ep-choice' + (eq.correct_answer?.[j] === 'D' ? ' correct' : '')}>
+                                                        <span className={'ep-tf-badge' + (eq.correct_answer?.[j] === 'D' ? ' true' : ' false')}>{eq.correct_answer?.[j] === 'D' ? '\u0110' : 'S'}</span>
+                                                        <span className="ep-letter">{c.letter})</span>
+                                                        <span dangerouslySetInnerHTML={{ __html: renderLatex(c.html || escHtml(c.text)) }} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {eq.type === 'short_answer' && eq.correct_answer && (
+                                            <div className="ep-answer"><i className="bi bi-pencil-square"></i> Đáp án: <b>{eq.correct_answer}</b></div>
+                                        )}
+                                        {(eq.explanation || eq.explanation_html) ? (
+                                            <div className="ed-p-expl">
+                                                <div className="ed-p-expl-head"><i className="bi bi-lightbulb-fill"></i> Lời giải</div>
+                                                <div className="ed-p-expl-body" dangerouslySetInnerHTML={{ __html: renderLatex(eq.explanation_html || escHtml(eq.explanation || '')) }} />
+                                            </div>
+                                        ) : (
+                                            <div className="ed-p-no-expl"><i className="bi bi-lightbulb"></i> Chưa có lời giải — thêm ở bên trái</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ═══ MATH SUB-DIALOG ═══ */}
+            <AnimatePresence>
+                {mathTarget && (
                     <motion.div className="math-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        onClick={() => setMathDialog(null)}>
+                        onClick={() => setMathTarget(null)} style={{ zIndex: 1100 }}>
                         <motion.div className="math-dialog" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
                             onClick={e => e.stopPropagation()}>
                             <div className="math-dialog-head">
                                 <h3><i className="bi bi-calculator"></i> Chèn công thức toán</h3>
-                                <button className="math-close" onClick={() => setMathDialog(null)}><i className="bi bi-x-lg"></i></button>
+                                <button className="math-close" onClick={() => setMathTarget(null)}><i className="bi bi-x-lg"></i></button>
                             </div>
-
-                            {/* Symbol palette */}
                             <div className="math-palette">
                                 <div className="math-palette-tabs">
                                     {MATH_GROUPS.map((g, gi) => (
@@ -754,38 +794,29 @@ export default function UploadExamPage() {
                                 <div className="math-palette-grid">
                                     {MATH_GROUPS[mathPaletteGroup].items.map((item, ii) => (
                                         <button key={ii} className="math-sym-btn" title={item.t}
-                                            onClick={() => insertMathSymbol(item.t)}>
-                                            {item.l}
-                                        </button>
+                                            onClick={() => insertMathSymbol(item.t)}>{item.l}</button>
                                     ))}
                                 </div>
                             </div>
-
-                            {/* LaTeX input */}
                             <div className="math-input-area">
                                 <label>LaTeX</label>
                                 <textarea value={mathLatex} onChange={e => setMathLatex(e.target.value)}
                                     placeholder={'Nhập LaTeX: \\frac{1}{2}, \\sqrt{x}, x^{2},...'}
                                     rows={3} autoFocus />
                             </div>
-
-                            {/* Live preview */}
                             <div className="math-live">
                                 <label>Xem trước</label>
                                 <div className="math-live-render" dangerouslySetInnerHTML={{
                                     __html: mathLatex.trim() ? (() => {
-                                        try {
-                                            const clean = mathLatex.replace(/\u25AB/g, '\\square ');
-                                            return katex.renderToString(clean, { displayMode: true, throwOnError: false });
-                                        } catch { return '<span style="color:#e53e3e">Lỗi cú pháp LaTeX</span>'; }
+                                        try { return katex.renderToString(mathLatex.replace(/\u25AB/g, '\\square '), { displayMode: true, throwOnError: false }); }
+                                        catch { return '<span style="color:#e53e3e">Lỗi cú pháp</span>'; }
                                     })() : '<span style="color:#999">Bấm ký hiệu hoặc nhập LaTeX...</span>'
                                 }} />
                             </div>
-
                             <div className="math-dialog-foot">
-                                <button className="btn btn-ghost btn-sm" onClick={() => setMathDialog(null)}>Huỷ</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setMathTarget(null)}>Huỷ</button>
                                 <button className="btn btn-primary btn-sm" onClick={confirmMath} disabled={!mathLatex.trim()}>
-                                    <i className="bi bi-plus-lg"></i> Chèn công thức
+                                    <i className="bi bi-plus-lg"></i> Chèn
                                 </button>
                             </div>
                         </motion.div>
