@@ -64,13 +64,22 @@ function Navbar() {
                             {userProfile?.role === 'admin' ? 'Admin' : userProfile?.role === 'teacher' ? 'GV' : 'HS'}
                         </span>
                     </div>
-                    <button className="btn-icon-sm" onClick={handleLogout} title="Đăng xuất">
-                        <i className="bi bi-box-arrow-right"></i>
+                    <button className="btn btn-sm btn-outline" onClick={handleLogout} title="Đăng xuất" style={{ whiteSpace: 'nowrap' }}>
+                        <i className="bi bi-box-arrow-right"></i> Đăng xuất
                     </button>
                 </div>
             </div>
         </nav>
     );
+}
+
+function LogoutRoute() {
+    const { logout } = useAuth();
+    const navigate = useNavigate();
+    React.useEffect(() => {
+        logout().then(() => navigate('/login'));
+    }, []);
+    return <div className="loading-screen"><div className="spinner"></div><p>Đang đăng xuất...</p></div>;
 }
 
 function AppRoutes() {
@@ -89,6 +98,7 @@ function AppRoutes() {
                     <Route path="/student" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
                     <Route path="/student/quiz/:examId" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
                     <Route path="/student/result/:sessionId" element={<ProtectedRoute><ResultPage /></ProtectedRoute>} />
+                    <Route path="/logout" element={<LogoutRoute />} />
                     <Route path="/" element={<Navigate to="/login" replace />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>

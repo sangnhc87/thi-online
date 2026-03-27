@@ -123,10 +123,10 @@ export default function StudentDashboard() {
             <div className="empty-state" style={{ marginTop: 60 }}>
                 <i className="bi bi-people" style={{ fontSize: '3rem' }}></i>
                 <h2 style={{ margin: '16px 0 8px' }}>Chưa tham gia lớp nào</h2>
-                <p style={{ color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto 24px' }}>
+                <p style={{ color: 'var(--text-muted)', maxWidth: 400, margin: '0 auto 16px' }}>
                     Hãy nhờ giáo viên gửi link lớp học cho bạn (dạng <code>/t/ten-giao-vien</code>) hoặc nhập link bên dưới.
                 </p>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 24 }}>
                     <input type="text" className="form-input" placeholder="Nhập link lớp, VD: /t/nguyen-van-a" id="join-input" style={{ maxWidth: 280 }} />
                     <button className="btn btn-primary" onClick={() => {
                         const val = document.getElementById('join-input').value.trim();
@@ -135,6 +135,12 @@ export default function StudentDashboard() {
                     }}>
                         <i className="bi bi-box-arrow-in-right"></i> Tham gia
                     </button>
+                </div>
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    <p>Đang đăng nhập: <strong>{user?.email}</strong> — Vai trò: <strong>{userProfile?.role}</strong></p>
+                    <Link to="/logout" className="btn btn-sm btn-outline" style={{ marginTop: 8 }}>
+                        <i className="bi bi-box-arrow-right"></i> Đăng xuất để đổi tài khoản
+                    </Link>
                 </div>
             </div>
         );
