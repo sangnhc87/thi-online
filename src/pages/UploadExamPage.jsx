@@ -6,8 +6,9 @@ import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
+import { parseDocx } from '../utils/docxParser';
 
-const CLOUD_RUN_URL = import.meta.env.VITE_PANDOC_API_URL || 'http://localhost:8080';
+const TYPE_LABELS = { mcq: 'Trắc nghiệm', tf: 'Đúng/Sai', short_answer: 'Tự luận ngắn', essay: 'Tự luận' };
 
 export default function UploadExamPage() {
     const { user } = useAuth();
@@ -22,60 +23,96 @@ export default function UploadExamPage() {
     const [shuffleChoices, setShuffleChoices] = useState(false);
     const [showResult, setShowResult] = useState(true);
     const [processing, setProcessing] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
+    const [preview, setPreview] = useState(null); // { questions, imageFiles }
 
-    const handleUpload = async (e) => {
+    // Step 1: Parse DOCX client-side
+    const handleParse = async () => {
+        if (!file) {
+            Swal.fire('Chưa chọn file', 'Vui lòng chọn file DOCX trước.', 'warning');
+            return;
+        }
+        setProcessing(true);
+        setPreview(null);
+        try {
+            Swal.fire({
+                title: 'Đang phân tích file...',
+                html: '<p>Đọc cấu trúc DOCX, trích xuất câu hỏi + hình ảnh...</p>',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading(),
+            });
+            const result = await parseDocx(file);
+            Swal.close();
+
+            if (result.questions.length === 0) {
+                Swal.fire('Không tìm thấy câu hỏi', 'Hãy kiểm tra lại file DOCX. Mỗi câu phải bắt đầu bằng "Câu 1:", "Câu 2:",...', 'warning');
+                return;
+            }
+
+            setPreview(result);
+        } catch (error) {
+            console.error('Parse error:', error);
+            Swal.fire('Lỗi đọc file', error.message, 'error');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    // Step 2: Save to Firestore
+    const handleSave = async (e) => {
         e.preventDefault();
-        if (!file || !title.trim()) {
-            Swal.fire('Thiếu thông tin', 'Vui lòng nhập tiêu đề và chọn file DOCX.', 'warning');
+        if (!preview || !title.trim()) {
+            Swal.fire('Thiếu thông tin', 'Vui lòng nhập tiêu đề và xử lý file trước.', 'warning');
             return;
         }
 
-        setProcessing(true);
+        setSaving(true);
         try {
             Swal.fire({
-                title: 'Đang xử lý file...',
-                html: '<div style="text-align:center"><p>Pandoc đang chuyển đổi DOCX → JSON</p><p style="color:#9ca3af;font-size:0.85rem">Trích xuất câu hỏi + hình ảnh...</p></div>',
+                title: 'Đang lưu đề thi...',
+                html: '<p>Tải hình ảnh lên Storage và lưu câu hỏi...</p>',
                 allowOutsideClick: false,
                 didOpen: () => Swal.showLoading(),
             });
 
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await fetch(`${CLOUD_RUN_URL}/convert`, { method: 'POST', body: formData });
-            if (!response.ok) throw new Error(`Pandoc API error: ${await response.text()}`);
-
-            const result = await response.json();
-
-            // Upload images
-            const imageMap = {};
-            if (result.images?.length > 0) {
-                for (const img of result.images) {
-                    const imgBytes = Uint8Array.from(atob(img.data_base64), c => c.charCodeAt(0));
+            // Upload images to Firebase Storage, get real URLs
+            const storageUrlMap = {}; // dataURL → storageURL
+            if (preview.imageFiles?.length > 0) {
+                for (const img of preview.imageFiles) {
                     const imgRef = ref(storage, `exams/${user.uid}/${Date.now()}_${img.name}`);
-                    await uploadBytes(imgRef, imgBytes, { contentType: img.content_type || 'image/png' });
-                    imageMap[img.name] = await getDownloadURL(imgRef);
+                    await uploadBytes(imgRef, img.blob, { contentType: img.mime });
+                    const url = await getDownloadURL(imgRef);
+                    const dataUrl = preview.imageMap[img.rId];
+                    if (dataUrl) storageUrlMap[dataUrl] = url;
                 }
             }
 
-            // Replace image refs in questions
-            const questions = result.questions.map((q, idx) => {
-                let contentHtml = q.content_html || '';
-                for (const [name, url] of Object.entries(imageMap)) {
-                    contentHtml = contentHtml.replaceAll(name, url);
+            // Replace data URLs with Storage URLs in question HTML
+            const replaceDataUrls = (html) => {
+                if (!html) return html;
+                for (const [dataUrl, storageUrl] of Object.entries(storageUrlMap)) {
+                    html = html.replaceAll(dataUrl, storageUrl);
                 }
-                const choices = (q.choices || []).map(c => {
-                    let choiceHtml = c.html || '';
-                    for (const [name, url] of Object.entries(imageMap)) {
-                        choiceHtml = choiceHtml.replaceAll(name, url);
-                    }
-                    return { ...c, html: choiceHtml };
-                });
-                return { ...q, content_html: contentHtml, choices, order: idx + 1 };
-            });
+                return html;
+            };
 
-            // Save exam
+            const questions = preview.questions.map((q, idx) => ({
+                number: q.number,
+                type: q.type,
+                content_text: q.content_text,
+                content_html: replaceDataUrls(q.content_html),
+                choices: (q.choices || []).map(c => ({
+                    letter: c.letter,
+                    text: c.text,
+                    html: replaceDataUrls(c.html),
+                })),
+                correct_answer: q.correct_answer,
+                explanation: q.explanation,
+                explanation_html: replaceDataUrls(q.explanation_html),
+                order: idx + 1,
+            }));
+
             const examRef = await addDoc(collection(db, 'exams'), {
                 title: title.trim(),
                 subject: subject.trim() || null,
@@ -102,10 +139,10 @@ export default function UploadExamPage() {
             });
             navigate('/teacher');
         } catch (error) {
-            console.error('Upload error:', error);
-            Swal.fire('Lỗi xử lý', error.message, 'error');
+            console.error('Save error:', error);
+            Swal.fire('Lỗi lưu đề', error.message, 'error');
         } finally {
-            setProcessing(false);
+            setSaving(false);
         }
     };
 
@@ -116,7 +153,7 @@ export default function UploadExamPage() {
                 Tải lên đề thi
             </h1>
 
-            <form onSubmit={handleUpload}>
+            <form onSubmit={handleSave}>
                 {/* Basic info */}
                 <div className="card" style={{ marginBottom: 20 }}>
                     <div className="card-header-gradient">
@@ -200,12 +237,20 @@ export default function UploadExamPage() {
                             </p>
                             <small style={{ color: 'var(--text-muted)' }}>Chỉ chấp nhận file .docx</small>
                         </div>
-                        <input id="file-input" type="file" accept=".docx" onChange={e => setFile(e.target.files[0])} style={{ display: 'none' }} />
+                        <input id="file-input" type="file" accept=".docx" onChange={e => { setFile(e.target.files[0]); setPreview(null); }} style={{ display: 'none' }} />
 
-                        <div style={{ marginTop: 16 }}>
+                        <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button type="button" className="btn btn-accent" disabled={!file || processing} onClick={handleParse}
+                                style={{ minWidth: 160, background: 'var(--gradient-success)', color: '#fff', border: 'none' }}>
+                                {processing ? (
+                                    <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }}></span> Đang xử lý...</>
+                                ) : (
+                                    <><i className="bi bi-eye"></i> Xem trước đề thi</>
+                                )}
+                            </button>
                             <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowGuide(!showGuide)}>
                                 <i className={`bi bi-${showGuide ? 'chevron-up' : 'chevron-down'}`}></i>
-                                Hướng dẫn soạn đề DOCX
+                                Hướng dẫn soạn đề
                             </button>
                         </div>
 
@@ -214,27 +259,32 @@ export default function UploadExamPage() {
                                 <h4>Cấu trúc chuẩn soạn đề DOCX:</h4>
                                 <div className="code-block">
 {`Câu 1: Nội dung câu hỏi ở đây.
-Có thể viết nhiều dòng, chèn hình ảnh.
-Hỗ trợ công thức LaTeX: $x^2 + y^2 = r^2$
 A. Đáp án A
-B. Đáp án B
-C. Đáp án C (đúng)
+B. Đáp án B (gạch chân = đúng)
+C. Đáp án C
 D. Đáp án D
-Đáp án: C
 
-Câu 2: Tính giá trị biểu thức $$\\frac{a+b}{c}$$
+Câu 2: Câu hỏi Đúng/Sai
+a) Mệnh đề 1 (gạch chân = Đúng)
+b) Mệnh đề 2
+c) Mệnh đề 3
+d) Mệnh đề 4
+
+Câu 3: Công thức $x^2 + y^2 = r^2$
 A. 1
 B. 2
 C. 3
 D. 4
-Đáp án: B`}
+Đáp án: B
+Lời giải: Đây là giải thích chi tiết.`}
                                 </div>
                                 <h4>Quy tắc:</h4>
                                 <ul>
-                                    <li><b>Câu hỏi:</b> Bắt đầu bằng "Câu 1:", "Câu 2:",... (hoặc "Question 1:")</li>
-                                    <li><b>Đáp án:</b> A. B. C. D. (hoặc A) B) C) D))</li>
-                                    <li><b>Đáp án đúng:</b> Dòng "Đáp án: X" sau mỗi câu (X = A/B/C/D)</li>
-                                    <li><b>Công thức:</b> Inline <code>$...$</code>, display <code>$$...$$</code></li>
+                                    <li><b>Câu hỏi:</b> Bắt đầu bằng "Câu 1:", "Câu 2:",...</li>
+                                    <li><b>Trắc nghiệm:</b> A. B. C. D. — <u>gạch chân</u> đáp án đúng trong Word</li>
+                                    <li><b>Đúng/Sai:</b> a) b) c) d) — <u>gạch chân</u> mệnh đề đúng</li>
+                                    <li><b>Tự luận ngắn:</b> Dùng "Đáp án: ..." (không có A.B.C.D.)</li>
+                                    <li><b>Lời giải:</b> Dòng "Lời giải: ..." sau đáp án (tuỳ chọn)</li>
                                     <li><b>Hình ảnh:</b> Chèn trực tiếp trong DOCX, tự trích xuất</li>
                                     <li><b>Định dạng:</b> In đậm, nghiêng, gạch chân giữ nguyên</li>
                                 </ul>
@@ -243,11 +293,87 @@ D. 4
                     </div>
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-lg" disabled={processing} style={{ width: '100%' }}>
-                    {processing ? (
-                        <><span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></span> Đang xử lý...</>
+                {/* Preview */}
+                {preview && (
+                    <div className="card" style={{ marginBottom: 20 }}>
+                        <div className="card-header-gradient" style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>
+                                <i className="bi bi-search me-2"></i>
+                                Xem trước — {preview.questions.length} câu hỏi
+                            </h3>
+                        </div>
+                        <div className="card-body" style={{ maxHeight: 500, overflowY: 'auto' }}>
+                            {preview.questions.map((q, i) => (
+                                <div key={i} className="preview-question" style={{
+                                    padding: '14px 16px', marginBottom: 12, borderRadius: 10,
+                                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <strong style={{ color: 'var(--accent)' }}>Câu {q.number}</strong>
+                                        <span style={{
+                                            fontSize: '0.75rem', padding: '2px 10px', borderRadius: 12,
+                                            background: q.type === 'mcq' ? '#dbeafe' : q.type === 'tf' ? '#fef3c7' : '#d1fae5',
+                                            color: q.type === 'mcq' ? '#1e40af' : q.type === 'tf' ? '#92400e' : '#065f46',
+                                            fontWeight: 600,
+                                        }}>
+                                            {TYPE_LABELS[q.type] || q.type}
+                                        </span>
+                                    </div>
+                                    <div dangerouslySetInnerHTML={{ __html: q.content_html }} style={{ marginBottom: 8 }} />
+
+                                    {q.choices.length > 0 && (
+                                        <div style={{ paddingLeft: 8 }}>
+                                            {q.choices.map((c, j) => (
+                                                <div key={j} style={{
+                                                    padding: '4px 8px', marginBottom: 3, borderRadius: 6,
+                                                    background: q.type === 'mcq' && q.correct_answer === c.letter ? 'rgba(34,197,94,0.12)' : 'transparent',
+                                                    border: q.type === 'mcq' && q.correct_answer === c.letter ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+                                                }}>
+                                                    <span style={{ fontWeight: 600, marginRight: 6 }}>
+                                                        {q.type === 'tf' ? `${c.letter})` : `${c.letter}.`}
+                                                    </span>
+                                                    <span dangerouslySetInnerHTML={{ __html: c.html }} />
+                                                    {q.type === 'tf' && q.correct_answer && (
+                                                        <span style={{
+                                                            marginLeft: 8, fontSize: '0.75rem', fontWeight: 600,
+                                                            color: q.correct_answer[j] === 'D' ? '#16a34a' : '#dc2626',
+                                                        }}>
+                                                            {q.correct_answer[j] === 'D' ? '✓ Đúng' : '✗ Sai'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {q.correct_answer && q.type !== 'tf' && (
+                                        <div style={{ fontSize: '0.85rem', color: '#16a34a', fontWeight: 600, marginTop: 4 }}>
+                                            <i className="bi bi-check-circle me-1"></i>Đáp án: {q.correct_answer}
+                                        </div>
+                                    )}
+                                    {!q.correct_answer && (
+                                        <div style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600, marginTop: 4 }}>
+                                            <i className="bi bi-exclamation-triangle me-1"></i>Chưa có đáp án
+                                        </div>
+                                    )}
+
+                                    {q.explanation_html && (
+                                        <div className="rq-explanation" style={{ marginTop: 8, fontSize: '0.85rem' }}>
+                                            <strong>Lời giải:</strong>
+                                            <span dangerouslySetInnerHTML={{ __html: q.explanation_html }} style={{ marginLeft: 6 }} />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <button type="submit" className="btn btn-primary btn-lg" disabled={!preview || saving} style={{ width: '100%' }}>
+                    {saving ? (
+                        <><span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></span> Đang lưu...</>
                     ) : (
-                        <><i className="bi bi-rocket-takeoff"></i> Tải lên & Tạo đề</>
+                        <><i className="bi bi-rocket-takeoff"></i> Lưu đề thi ({preview ? preview.questions.length + ' câu' : '...'})</>
                     )}
                 </button>
             </form>
