@@ -299,3 +299,76 @@ function blobToDataURL(blob) {
         reader.readAsDataURL(blob);
     });
 }
+
+// ====== Serialize questions → plain text ======
+export function questionsToText(questions) {
+    return questions.map(q => {
+        const lines = [`Câu ${q.number}: ${q.content_text || ''}`];
+        for (const c of (q.choices || [])) {
+            const pfx = q.type === 'tf' ? `${c.letter})` : `${c.letter}.`;
+            lines.push(`${pfx} ${c.text || ''}`);
+        }
+        if (q.correct_answer) lines.push(`Đáp án: ${q.correct_answer}`);
+        if (q.explanation) lines.push(`Lời giải: ${q.explanation}`);
+        return lines.join('\n');
+    }).join('\n\n');
+}
+
+// ====== Parse plain text → questions ======
+export function parseText(text) {
+    const qPat = /^(?:Câu|Question|Q)\s*(\d+)\s*[.:)]\s*(.*)/i;
+    const mcqPat = /^([A-D])\s*[.)]\s*(.*)/;
+    const tfPat = /^([a-d])\s*\)\s*(.*)/;
+    const ansPat = /^(?:Đáp án|ĐÁ|Answer|Correct)\s*[:=]\s*(.*)/i;
+    const explPat = /^(?:Lời giải|Giải thích|Giải|Explanation|Solution)\s*[:]\s*(.*)/i;
+
+    const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    const lines = text.split('\n');
+    const questions = [];
+    let cur = null, collectExpl = false;
+
+    const finalize = () => {
+        if (!cur) return;
+        const hasMcq = cur.choices.some(c => c._f === 'mcq');
+        const hasTf = cur.choices.some(c => c._f === 'tf');
+        if (hasMcq && cur.choices.length >= 2) cur.type = 'mcq';
+        else if (hasTf) cur.type = 'tf';
+        else if (cur.correct_answer && cur.choices.length === 0) cur.type = 'short_answer';
+        else cur.type = 'mcq';
+        cur.content_html = esc(cur.content_text);
+        cur.choices.forEach(c => { c.html = esc(c.text); delete c._f; });
+        if (cur.explanation) cur.explanation_html = esc(cur.explanation);
+        questions.push(cur);
+    };
+
+    for (const line of lines) {
+        const t = line.trim();
+        if (!t) continue;
+
+        if (explPat.test(t) && cur) {
+            cur.explanation = t.match(explPat)[1].trim();
+            collectExpl = true; continue;
+        }
+        if (collectExpl && cur) {
+            if (qPat.test(t)) { collectExpl = false; }
+            else { cur.explanation = ((cur.explanation || '') + '\n' + t).trim(); continue; }
+        }
+        const ansM = t.match(ansPat);
+        if (ansM && cur) { cur.correct_answer = ansM[1].trim(); continue; }
+
+        const qM = t.match(qPat);
+        if (qM) {
+            finalize(); collectExpl = false;
+            cur = { number: parseInt(qM[1]), content_text: qM[2].trim(), content_html: '', choices: [], correct_answer: null, explanation: null, explanation_html: null };
+            continue;
+        }
+        const mcqM = t.match(mcqPat);
+        if (mcqM && cur) { cur.choices.push({ letter: mcqM[1].toUpperCase(), text: mcqM[2].trim(), html: '', _f: 'mcq' }); continue; }
+        const tfM = t.match(tfPat);
+        if (tfM && cur) { cur.choices.push({ letter: tfM[1].toLowerCase(), text: tfM[2].trim(), html: '', _f: 'tf' }); continue; }
+
+        if (cur && cur.choices.length === 0 && !collectExpl) cur.content_text += '\n' + t;
+    }
+    finalize();
+    return questions;
+}
