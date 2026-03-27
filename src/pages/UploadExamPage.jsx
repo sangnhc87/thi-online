@@ -81,21 +81,26 @@ export default function UploadExamPage() {
 
     const [file, setFile] = useState(null);
     const [parsing, setParsing] = useState(false);
+    const [parseWarnings, setParseWarnings] = useState([]);
     const [questions, setQuestions] = useState(null);
     const [imageFiles, setImageFiles] = useState([]);
     const [imageMap, setImageMap] = useState({});
     const [activeQ, setActiveQ] = useState(0);
-    const [editingQ, setEditingQ] = useState(-1); // -1 = no dialog
+    const [editingQ, setEditingQ] = useState(-1);
     const [leftTab, setLeftTab] = useState('edit');
     const [sourceText, setSourceText] = useState('');
     const [saving, setSaving] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
-    const [showExplIdx, setShowExplIdx] = useState(new Set()); // which preview cards have explanation open
+    const [showExplIdx, setShowExplIdx] = useState(new Set());
 
-    // Math sub-dialog inside edit dialog
-    const [mathTarget, setMathTarget] = useState(null); // { field, cIdx? }
+    // Math sub-dialog
+    const [mathTarget, setMathTarget] = useState(null);
     const [mathLatex, setMathLatex] = useState('');
     const [mathPaletteGroup, setMathPaletteGroup] = useState(0);
+
+    // Image upload
+    const imgInputRef = useRef(null);
+    const [imgTarget, setImgTarget] = useState(null); // { field: 'content'|'choice'|'explanation', cIdx? }
 
     const previewRefs = useRef([]);
     const editorRefs = useRef([]);
@@ -105,6 +110,7 @@ export default function UploadExamPage() {
     const handleParse = useCallback(async (f) => {
         if (!f) return;
         setParsing(true);
+        setParseWarnings([]);
         try {
             const result = await parseDocx(f);
             if (result.questions.length === 0) {
@@ -116,6 +122,20 @@ export default function UploadExamPage() {
             setImageFiles(result.imageFiles);
             setImageMap(result.imageMap);
             setSourceText(questionsToText(result.questions));
+            // Warnings about images
+            const warns = [];
+            if (result.imageFiles?.length > 0) {
+                const emfWmf = result.imageFiles.filter(f => /\.(emf|wmf)$/i.test(f.name));
+                if (emfWmf.length > 0) warns.push(`${emfWmf.length} ảnh EMF/WMF (MathType) — trình duyệt có thể không hiển thị được`);
+                warns.push(`Tìm thấy ${result.imageFiles.length} hình ảnh trong DOCX`);
+            }
+            const imgCount = result.questions.reduce((s, q) => {
+                let c = (q.content_html || '').split('<img ').length - 1;
+                (q.choices || []).forEach(ch => { c += (ch.html || '').split('<img ').length - 1; });
+                return s + c;
+            }, 0);
+            if (imgCount > 0) warns.push(`${imgCount} hình ảnh được chèn vào câu hỏi`);
+            setParseWarnings(warns);
         } catch (err) {
             console.error(err);
             Swal.fire('Lỗi đọc file', err.message, 'error');
@@ -127,6 +147,7 @@ export default function UploadExamPage() {
         setFile(f);
         setQuestions(null);
         setEditingQ(-1);
+        setParseWarnings([]);
         handleParse(f);
     }, [handleParse]);
 
@@ -198,6 +219,114 @@ export default function UploadExamPage() {
         updateQ(idx, { type: newType });
     }, [updateQ]);
 
+    // ═══ Toolbar actions for textarea ═══
+    const wrapSelection = useCallback((fieldKey, before, after) => {
+        const ta = fieldRefs.current[fieldKey];
+        if (!ta) return;
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        const val = ta.value;
+        const selected = val.slice(start, end);
+        const newVal = val.slice(0, start) + before + selected + after + val.slice(end);
+        // Determine which field to update
+        if (fieldKey === 'q-content') {
+            updateQ(editingQ, { content_text: newVal });
+        } else if (fieldKey === 'q-expl') {
+            updateQ(editingQ, { explanation: newVal });
+        } else if (fieldKey.startsWith('q-c')) {
+            const ci = parseInt(fieldKey.slice(3));
+            updateChoice(editingQ, ci, { text: newVal });
+        }
+        // Restore selection after update
+        setTimeout(() => {
+            ta.focus();
+            ta.selectionStart = start + before.length;
+            ta.selectionEnd = start + before.length + selected.length;
+        }, 10);
+    }, [editingQ, updateQ, updateChoice]);
+
+    // ═══ Image upload ═══
+    const handleImageUpload = useCallback(async (e) => {
+        const files = e.target.files;
+        if (!files?.length || editingQ < 0 || !imgTarget) return;
+        const uploaded = [];
+        for (const file of files) {
+            if (!file.type.startsWith('image/')) continue;
+            if (file.size > 5 * 1024 * 1024) {
+                Swal.fire('Ảnh quá lớn', `${file.name} vượt quá 5MB`, 'warning');
+                continue;
+            }
+            const dataUrl = await new Promise((res) => {
+                const r = new FileReader();
+                r.onload = () => res(r.result);
+                r.readAsDataURL(file);
+            });
+            uploaded.push({ dataUrl, name: file.name, blob: file, mime: file.type });
+        }
+        if (uploaded.length === 0) return;
+
+        // Add to imageFiles for later upload
+        setImageFiles(prev => [...prev, ...uploaded.map(u => ({
+            rId: 'manual_' + Date.now() + '_' + u.name,
+            name: u.name, blob: u.blob, mime: u.mime,
+        }))]);
+
+        // Insert <img> tag into html and update imageMap
+        const i = editingQ;
+        const imgTags = uploaded.map(u => `<img src="${u.dataUrl}" style="max-width:100%;vertical-align:middle;" />`).join('');
+        setImageMap(prev => {
+            const n = { ...prev };
+            uploaded.forEach(u => { n['manual_' + u.name] = u.dataUrl; });
+            return n;
+        });
+
+        if (imgTarget.field === 'content') {
+            setQuestions(prev => prev.map((q, qi) => {
+                if (qi !== i) return q;
+                return { ...q, content_html: (q.content_html || '') + imgTags };
+            }));
+        } else if (imgTarget.field === 'choice' && imgTarget.cIdx != null) {
+            setQuestions(prev => prev.map((q, qi) => {
+                if (qi !== i) return q;
+                const choices = q.choices.map((c, j) => j === imgTarget.cIdx ? { ...c, html: (c.html || '') + imgTags } : c);
+                return { ...q, choices };
+            }));
+        } else if (imgTarget.field === 'explanation') {
+            setQuestions(prev => prev.map((q, qi) => {
+                if (qi !== i) return q;
+                return { ...q, explanation_html: (q.explanation_html || '') + imgTags };
+            }));
+        }
+        setImgTarget(null);
+        if (imgInputRef.current) imgInputRef.current.value = '';
+    }, [editingQ, imgTarget]);
+
+    const triggerImgUpload = useCallback((field, cIdx) => {
+        setImgTarget({ field, cIdx });
+        setTimeout(() => imgInputRef.current?.click(), 50);
+    }, []);
+
+    // ═══ Remove image ═══
+    const removeImage = useCallback((qIdx, field, cIdx, imgIdx) => {
+        setQuestions(prev => prev.map((q, i) => {
+            if (i !== qIdx) return q;
+            const removeNth = (html, n) => {
+                let count = 0;
+                return html.replace(/<img [^>]*>/g, (match) => {
+                    if (count++ === n) return '';
+                    return match;
+                });
+            };
+            if (field === 'content') return { ...q, content_html: removeNth(q.content_html, imgIdx) };
+            if (field === 'choice') {
+                const choices = q.choices.map((c, j) => j === cIdx ? { ...c, html: removeNth(c.html, imgIdx) } : c);
+                return { ...q, choices };
+            }
+            if (field === 'explanation') return { ...q, explanation_html: removeNth(q.explanation_html, imgIdx) };
+            return q;
+        }));
+    }, []);
+
     // ═══ Math sub-dialog ═══
     const openMath = useCallback((field, cIdx) => {
         setMathTarget({ field, cIdx });
@@ -218,22 +347,21 @@ export default function UploadExamPage() {
         if (!mathTarget || editingQ < 0 || !mathLatex.trim()) return;
         const i = editingQ;
         const tex = '$$' + mathLatex.replace(/\u25AB/g, '') + '$$';
-
         if (mathTarget.field === 'content') {
             const q = questions[i];
-            const ta = fieldRefs.current[`q-content`];
+            const ta = fieldRefs.current['q-content'];
             const old = q.content_text || '';
             const pos = ta?.selectionStart ?? old.length;
             updateQ(i, { content_text: old.slice(0, pos) + tex + old.slice(pos) });
         } else if (mathTarget.field === 'choice') {
             const c = questions[i].choices[mathTarget.cIdx];
-            const ta = fieldRefs.current[`q-c${mathTarget.cIdx}`];
+            const ta = fieldRefs.current['q-c' + mathTarget.cIdx];
             const old = c.text || '';
             const pos = ta?.selectionStart ?? old.length;
             updateChoice(i, mathTarget.cIdx, { text: old.slice(0, pos) + tex + old.slice(pos) });
         } else if (mathTarget.field === 'explanation') {
             const q = questions[i];
-            const ta = fieldRefs.current[`q-expl`];
+            const ta = fieldRefs.current['q-expl'];
             const old = q.explanation || '';
             const pos = ta?.selectionStart ?? old.length;
             updateQ(i, { explanation: old.slice(0, pos) + tex + old.slice(pos) });
@@ -254,10 +382,7 @@ export default function UploadExamPage() {
     // ═══ Source mode ═══
     const applySource = useCallback(() => {
         const parsed = parseText(sourceText);
-        if (parsed.length === 0) {
-            Swal.fire('Không tìm thấy câu hỏi', 'Định dạng không hợp lệ.', 'warning');
-            return;
-        }
+        if (parsed.length === 0) { Swal.fire('Không tìm thấy câu hỏi', 'Định dạng không hợp lệ.', 'warning'); return; }
         setQuestions(parsed);
         setEditingQ(-1);
         Swal.fire({ icon: 'success', title: 'Đã cập nhật ' + parsed.length + ' câu', timer: 1500, showConfirmButton: false });
@@ -311,6 +436,19 @@ export default function UploadExamPage() {
                     if (dataUrl) storageUrlMap[dataUrl] = url;
                 }
             }
+            // Also upload manually added images
+            const allHtml = questions.map(q => [q.content_html, q.explanation_html, ...(q.choices || []).map(c => c.html)].join('')).join('');
+            const dataUrlMatches = allHtml.match(/src="(data:image\/[^"]+)"/g) || [];
+            for (const m of dataUrlMatches) {
+                const du = m.slice(5, -1);
+                if (storageUrlMap[du]) continue;
+                const resp = await fetch(du);
+                const blob = await resp.blob();
+                const imgRef = ref(storage, 'exams/' + user.uid + '/' + Date.now() + '_manual.png');
+                await uploadBytes(imgRef, blob, { contentType: blob.type });
+                const url = await getDownloadURL(imgRef);
+                storageUrlMap[du] = url;
+            }
             const replUrls = (html) => {
                 if (!html) return html;
                 for (const [d, s] of Object.entries(storageUrlMap)) html = html.replaceAll(d, s);
@@ -344,13 +482,57 @@ export default function UploadExamPage() {
         } finally { setSaving(false); }
     };
 
-    // Current editing question
+    // Editing Q
     const eq = editingQ >= 0 && questions ? questions[editingQ] : null;
+
+    // ═══ Mini toolbar component ═══
+    const EditorToolbar = ({ fieldKey, onMath, onImage }) => (
+        <div className="ed-toolbar">
+            <button className="ed-tb-btn" title="In đậm (Ctrl+B)" onClick={() => wrapSelection(fieldKey, '**', '**')}>
+                <i className="bi bi-type-bold"></i>
+            </button>
+            <button className="ed-tb-btn" title="In nghiêng (Ctrl+I)" onClick={() => wrapSelection(fieldKey, '*', '*')}>
+                <i className="bi bi-type-italic"></i>
+            </button>
+            <button className="ed-tb-btn" title="Gạch chân" onClick={() => wrapSelection(fieldKey, '<u>', '</u>')}>
+                <i className="bi bi-type-underline"></i>
+            </button>
+            <span className="ed-tb-sep" />
+            <button className="ed-tb-btn accent" title="Chèn công thức" onClick={onMath}>
+                <i className="bi bi-calculator"></i> <span className="ed-tb-label">Σ Công thức</span>
+            </button>
+            <button className="ed-tb-btn accent" title="Chèn hình ảnh" onClick={onImage}>
+                <i className="bi bi-image"></i> <span className="ed-tb-label">Ảnh</span>
+            </button>
+        </div>
+    );
+
+    // ═══ Image gallery component ═══
+    const ImageGallery = ({ html, field, cIdx, qIdx }) => {
+        const imgs = extractImgTags(html);
+        if (imgs.length === 0) return null;
+        return (
+            <div className="ed-img-gallery">
+                {imgs.map((img, j) => (
+                    <div key={j} className="ed-img-item">
+                        <div className="ed-img-preview" dangerouslySetInnerHTML={{ __html: img }} />
+                        <button className="ed-img-remove" onClick={() => removeImage(qIdx, field, cIdx, j)} title="Xóa ảnh">
+                            <i className="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    // Hidden file input for images
+    const imgInput = <input ref={imgInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display: 'none' }} />;
 
     // ═══ STEP 1: Upload ═══
     if (!questions) {
         return (
             <div className="upload-step">
+                {imgInput}
                 <div className="upload-step-inner">
                     <div className="upload-hero">
                         <i className="bi bi-file-earmark-word-fill"></i>
@@ -396,6 +578,7 @@ export default function UploadExamPage() {
     // ═══ STEP 2: Editor ═══
     return (
         <div className="exam-editor">
+            {imgInput}
             {/* Header */}
             <div className="ee-header">
                 <div className="ee-header-left">
@@ -449,8 +632,16 @@ export default function UploadExamPage() {
                 </div>
             )}
 
+            {parseWarnings.length > 0 && (
+                <div className="ee-warnings">
+                    {parseWarnings.map((w, i) => (
+                        <span key={i} className="ee-warn-item"><i className="bi bi-info-circle"></i> {w}</span>
+                    ))}
+                </div>
+            )}
+
             <div className="ee-body">
-                {/* ═══ LEFT: Question list ═══ */}
+                {/* LEFT: Question list */}
                 <div className="ee-left">
                     <div className="ee-left-tabs">
                         <button className={'ee-tab' + (leftTab === 'edit' ? ' active' : '')} onClick={() => setLeftTab('edit')}>
@@ -465,6 +656,7 @@ export default function UploadExamPage() {
                             <div className="ee-question-list">
                                 {questions.map((q, i) => {
                                     const issues = getIssues(q);
+                                    const hasImgs = (q.content_html || '').includes('<img ');
                                     return (
                                         <div key={i} ref={el => editorRefs.current[i] = el}
                                             className={'eq-card' + (activeQ === i ? ' active' : '') + (issues.length ? ' has-issues' : ' valid')}
@@ -474,6 +666,7 @@ export default function UploadExamPage() {
                                                 <span className="eq-type-badge" style={{ background: TYPE_COLORS[q.type]?.bg, color: TYPE_COLORS[q.type]?.color }}>
                                                     {TYPE_LABELS[q.type]}
                                                 </span>
+                                                {hasImgs && <i className="bi bi-image eq-img-icon" title="Có hình ảnh"></i>}
                                                 {issues.length === 0
                                                     ? <i className="bi bi-check-circle-fill eq-valid-icon"></i>
                                                     : <i className="bi bi-exclamation-triangle-fill eq-issue-icon" title={issues.join(', ')}></i>}
@@ -511,7 +704,7 @@ export default function UploadExamPage() {
                     </div>
                 </div>
 
-                {/* ═══ RIGHT: Preview ═══ */}
+                {/* RIGHT: Preview */}
                 <div className="ee-right">
                     <div className="ee-right-header">
                         <i className="bi bi-eye"></i> Xem trước (góc nhìn học sinh)
@@ -560,7 +753,6 @@ export default function UploadExamPage() {
                                     {q.type === 'short_answer' && q.correct_answer && (
                                         <div className="ep-answer"><i className="bi bi-pencil-square"></i> Đáp án: <b>{q.correct_answer}</b></div>
                                     )}
-                                    {/* Explanation toggle */}
                                     {hasExpl && (
                                         <div className="ep-expl-wrap">
                                             <button className={'ep-expl-toggle' + (explOpen ? ' open' : '')} onClick={e => { e.stopPropagation(); toggleExplanation(i); }}>
@@ -578,12 +770,8 @@ export default function UploadExamPage() {
                                             </AnimatePresence>
                                         </div>
                                     )}
-                                    {!hasExpl && (
-                                        <div className="ep-no-expl"><i className="bi bi-lightbulb"></i> Chưa có lời giải</div>
-                                    )}
-                                    {issues.length > 0 && (
-                                        <div className="ep-issues">{issues.map((iss, j) => <span key={j}>{'\u26A0'} {iss}</span>)}</div>
-                                    )}
+                                    {!hasExpl && <div className="ep-no-expl"><i className="bi bi-lightbulb"></i> Chưa có lời giải</div>}
+                                    {issues.length > 0 && <div className="ep-issues">{issues.map((iss, j) => <span key={j}>{'\u26A0'} {iss}</span>)}</div>}
                                 </div>
                             );
                         })}
@@ -591,14 +779,14 @@ export default function UploadExamPage() {
                 </div>
             </div>
 
-            {/* ════════════════════════════════════════════════
-                EDIT DIALOG — full-screen modal with split view
-               ════════════════════════════════════════════════ */}
+            {/* ══════ EDIT DIALOG ══════ */}
             <AnimatePresence>
                 {eq && (
-                    <motion.div className="ed-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        <motion.div className="ed-dialog" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}>
-                            {/* Dialog header */}
+                    <motion.div className="ed-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        onClick={(e) => { if (e.target === e.currentTarget) setEditingQ(-1); }}>
+                        <motion.div className="ed-dialog" initial={{ y: 40, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 40, opacity: 0, scale: 0.97 }}
+                            transition={{ type: 'spring', damping: 28, stiffness: 400 }}>
+                            {/* Header */}
                             <div className="ed-head">
                                 <div className="ed-head-left">
                                     <span className="ed-head-num">Câu {eq.number}</span>
@@ -624,67 +812,72 @@ export default function UploadExamPage() {
                             </div>
 
                             <div className="ed-body">
-                                {/* ── Left: Form ── */}
+                                {/* Left: Form */}
                                 <div className="ed-form">
                                     {/* Content */}
                                     <div className="ed-section">
-                                        <div className="ed-label-row">
-                                            <label className="ed-label"><i className="bi bi-card-text"></i> Nội dung câu hỏi</label>
-                                            <button className="ed-math-btn" onClick={() => openMath('content')}><i className="bi bi-calculator"></i> Σ</button>
-                                        </div>
+                                        <label className="ed-label"><i className="bi bi-card-text"></i> Nội dung câu hỏi</label>
+                                        <EditorToolbar fieldKey="q-content"
+                                            onMath={() => openMath('content')}
+                                            onImage={() => triggerImgUpload('content')} />
                                         <textarea
-                                            ref={el => fieldRefs.current[`q-content`] = el}
+                                            ref={el => fieldRefs.current['q-content'] = el}
                                             value={eq.content_text || ''}
                                             onChange={e => updateQ(editingQ, { content_text: e.target.value })}
-                                            rows={Math.max(3, Math.min(12, (eq.content_text || '').split('\n').length + 1))}
+                                            rows={Math.max(3, Math.min(10, (eq.content_text || '').split('\n').length + 1))}
                                             className="ed-textarea" placeholder="Nhập nội dung câu hỏi..." />
+                                        <ImageGallery html={eq.content_html} field="content" qIdx={editingQ} />
                                     </div>
-
-                                    {/* Images */}
-                                    {extractImgTags(eq.content_html).length > 0 && (
-                                        <div className="ed-section ed-imgs">
-                                            <label className="ed-label"><i className="bi bi-image"></i> Hình ảnh</label>
-                                            <div className="ed-img-row">
-                                                {extractImgTags(eq.content_html).map((img, j) => (
-                                                    <div key={j} className="ed-img-thumb" dangerouslySetInnerHTML={{ __html: img }} />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
 
                                     {/* Choices */}
                                     {(eq.type === 'mcq' || eq.type === 'tf') && (
                                         <div className="ed-section">
-                                            <label className="ed-label"><i className="bi bi-list-check"></i> Đáp án</label>
+                                            <label className="ed-label"><i className="bi bi-list-check"></i> Đáp án {eq.type === 'mcq' && <small>(chọn đáp án đúng)</small>}</label>
                                             <div className="ed-choices">
                                                 {eq.choices.map((c, j) => {
                                                     const isCorrect = eq.type === 'mcq' ? eq.correct_answer === c.letter : eq.correct_answer?.[j] === 'D';
+                                                    const choiceImgs = extractImgTags(c.html);
                                                     return (
                                                         <div key={j} className={'ed-choice' + (isCorrect ? ' correct' : '')}>
-                                                            {eq.type === 'mcq' ? (
-                                                                <label className="ed-radio">
-                                                                    <input type="radio" name="ed-correct" checked={eq.correct_answer === c.letter}
-                                                                        onChange={() => setCorrectAnswer(editingQ, c.letter)} />
-                                                                    <span className={'ed-dot' + (isCorrect ? ' on' : '')} />
-                                                                </label>
-                                                            ) : (
-                                                                <button className={'ed-tf' + (isCorrect ? ' on' : '')}
-                                                                    onClick={() => {
-                                                                        const arr = (eq.correct_answer || 'SSSS').split('');
-                                                                        arr[j] = arr[j] === 'D' ? 'S' : 'D';
-                                                                        setCorrectAnswer(editingQ, arr.join(''));
-                                                                    }}>
-                                                                    {isCorrect ? '\u0110' : 'S'}
-                                                                </button>
+                                                            <div className="ed-choice-main">
+                                                                {eq.type === 'mcq' ? (
+                                                                    <label className="ed-radio">
+                                                                        <input type="radio" name="ed-correct" checked={eq.correct_answer === c.letter}
+                                                                            onChange={() => setCorrectAnswer(editingQ, c.letter)} />
+                                                                        <span className={'ed-dot' + (isCorrect ? ' on' : '')} />
+                                                                    </label>
+                                                                ) : (
+                                                                    <button className={'ed-tf' + (isCorrect ? ' on' : '')}
+                                                                        onClick={() => {
+                                                                            const arr = (eq.correct_answer || 'SSSS').split('');
+                                                                            arr[j] = arr[j] === 'D' ? 'S' : 'D';
+                                                                            setCorrectAnswer(editingQ, arr.join(''));
+                                                                        }}>
+                                                                        {isCorrect ? '\u0110' : 'S'}
+                                                                    </button>
+                                                                )}
+                                                                <span className="ed-cletter">{eq.type === 'tf' ? c.letter + ')' : c.letter + '.'}</span>
+                                                                <input type="text"
+                                                                    ref={el => fieldRefs.current['q-c' + j] = el}
+                                                                    value={c.text || ''}
+                                                                    onChange={e => updateChoice(editingQ, j, { text: e.target.value })}
+                                                                    className="ed-cinput" placeholder="Nội dung đáp án..." />
+                                                                <button className="ed-mini" onClick={() => openMath('choice', j)} title="Công thức"><i className="bi bi-calculator"></i></button>
+                                                                <button className="ed-mini" onClick={() => triggerImgUpload('choice', j)} title="Ảnh"><i className="bi bi-image"></i></button>
+                                                                <button className="ed-mini danger" onClick={() => removeChoice(editingQ, j)} title="Xóa"><i className="bi bi-x-lg"></i></button>
+                                                            </div>
+                                                            {choiceImgs.length > 0 && (
+                                                                <div className="ed-choice-imgs">
+                                                                    {choiceImgs.map((img, k) => (
+                                                                        <div key={k} className="ed-img-item small">
+                                                                            <div className="ed-img-preview" dangerouslySetInnerHTML={{ __html: img }} />
+                                                                            <button className="ed-img-remove" onClick={() => removeImage(editingQ, 'choice', j, k)} title="Xóa ảnh">
+                                                                                <i className="bi bi-x-circle-fill"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
                                                             )}
-                                                            <span className="ed-cletter">{eq.type === 'tf' ? c.letter + ')' : c.letter + '.'}</span>
-                                                            <input type="text"
-                                                                ref={el => fieldRefs.current[`q-c${j}`] = el}
-                                                                value={c.text || ''}
-                                                                onChange={e => updateChoice(editingQ, j, { text: e.target.value })}
-                                                                className="ed-cinput" placeholder="Nội dung đáp án..." />
-                                                            <button className="ed-mini" onClick={() => openMath('choice', j)} title="Công thức"><i className="bi bi-calculator"></i></button>
-                                                            <button className="ed-mini danger" onClick={() => removeChoice(editingQ, j)} title="Xóa"><i className="bi bi-x-lg"></i></button>
                                                         </div>
                                                     );
                                                 })}
@@ -706,21 +899,22 @@ export default function UploadExamPage() {
 
                                     {/* Explanation */}
                                     <div className="ed-section ed-expl">
-                                        <div className="ed-label-row">
-                                            <label className="ed-label"><i className="bi bi-lightbulb"></i> Lời giải <small>(không bắt buộc)</small></label>
-                                            <button className="ed-math-btn" onClick={() => openMath('explanation')}><i className="bi bi-calculator"></i> Σ</button>
-                                        </div>
+                                        <label className="ed-label"><i className="bi bi-lightbulb"></i> Lời giải <small>(không bắt buộc)</small></label>
+                                        <EditorToolbar fieldKey="q-expl"
+                                            onMath={() => openMath('explanation')}
+                                            onImage={() => triggerImgUpload('explanation')} />
                                         <textarea
-                                            ref={el => fieldRefs.current[`q-expl`] = el}
+                                            ref={el => fieldRefs.current['q-expl'] = el}
                                             value={eq.explanation || ''}
                                             onChange={e => updateQ(editingQ, { explanation: e.target.value })}
                                             rows={3} className="ed-textarea" placeholder="Giải thích chi tiết cho câu này..." />
+                                        <ImageGallery html={eq.explanation_html} field="explanation" qIdx={editingQ} />
                                     </div>
                                 </div>
 
-                                {/* ── Right: Live preview ── */}
+                                {/* Right: Live preview */}
                                 <div className="ed-preview">
-                                    <div className="ed-preview-label"><i className="bi bi-eye"></i> Xem trước (real-time)</div>
+                                    <div className="ed-preview-label"><i className="bi bi-eye"></i> Xem trước</div>
                                     <div className="ed-preview-card">
                                         <div className="ed-p-head">
                                             <span className="ep-num">Câu {eq.number}</span>
@@ -840,8 +1034,7 @@ function renderLatex(html) {
 
 function extractImgTags(html) {
     if (!html) return [];
-    const m = html.match(/<img [^>]*>/g);
-    return m || [];
+    return html.match(/<img [^>]*>/g) || [];
 }
 
 function richHtml(text, preservedImgs) {
