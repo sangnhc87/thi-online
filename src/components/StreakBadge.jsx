@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getStreakLevel } from '../utils/scoring';
 
 export default function StreakBadge({ streak = 0, size = 'md' }) {
-    const { level, label, color, glow } = getStreakLevel(streak);
+    const { label, color, glow } = getStreakLevel(streak);
 
     if (streak === 0) return null;
 

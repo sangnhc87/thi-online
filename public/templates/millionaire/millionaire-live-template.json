@@ -1,0 +1,156 @@
+{
+  "title": "Ai la trieu phu - bo mau 12 cau",
+  "subject": "Tong hop",
+  "duration": 20,
+  "questions": [
+    {
+      "type": "mcq",
+      "content": "Thủ đô của Việt Nam là thành phố nào?",
+      "choices": [
+        { "letter": "A", "text": "Huế" },
+        { "letter": "B", "text": "Hà Nội" },
+        { "letter": "C", "text": "Đà Nẵng" },
+        { "letter": "D", "text": "Cần Thơ" }
+      ],
+      "answer": "B",
+      "explanation": "Hà Nội là thủ đô của Việt Nam.",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Hành tinh nào thường được gọi là Hành tinh Đỏ?",
+      "choices": [
+        { "letter": "A", "text": "Sao Kim" },
+        { "letter": "B", "text": "Sao Hỏa" },
+        { "letter": "C", "text": "Sao Mộc" },
+        { "letter": "D", "text": "Sao Thủy" }
+      ],
+      "answer": "B",
+      "explanation": "Sao Hỏa có bề mặt màu đỏ do giàu oxit sắt.",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Công thức hóa học của nước là gì?",
+      "choices": [
+        { "letter": "A", "text": "CO2" },
+        { "letter": "B", "text": "O2" },
+        { "letter": "C", "text": "H2O" },
+        { "letter": "D", "text": "NaCl" }
+      ],
+      "answer": "C",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "9 x 7 bằng bao nhiêu?",
+      "choices": [
+        { "letter": "A", "text": "56" },
+        { "letter": "B", "text": "63" },
+        { "letter": "C", "text": "72" },
+        { "letter": "D", "text": "81" }
+      ],
+      "answer": "B",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Trong tam giác, tổng ba góc bằng bao nhiêu độ?",
+      "choices": [
+        { "letter": "A", "text": "90 độ" },
+        { "letter": "B", "text": "180 độ" },
+        { "letter": "C", "text": "270 độ" },
+        { "letter": "D", "text": "360 độ" }
+      ],
+      "answer": "B",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Cơ quan nào trong cơ thể người có chức năng bơm máu?",
+      "choices": [
+        { "letter": "A", "text": "Gan" },
+        { "letter": "B", "text": "Phổi" },
+        { "letter": "C", "text": "Tim" },
+        { "letter": "D", "text": "Thận" }
+      ],
+      "answer": "C",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Ngôn ngữ đánh dấu cơ bản để tạo cấu trúc trang web là gì?",
+      "choices": [
+        { "letter": "A", "text": "HTML" },
+        { "letter": "B", "text": "CSS" },
+        { "letter": "C", "text": "SQL" },
+        { "letter": "D", "text": "Excel" }
+      ],
+      "answer": "A",
+      "explanation": "HTML tạo cấu trúc, CSS lo giao diện và JavaScript lo hành vi.",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Đại dương lớn nhất trên Trái Đất là đại dương nào?",
+      "choices": [
+        { "letter": "A", "text": "Đại Tây Dương" },
+        { "letter": "B", "text": "Ấn Độ Dương" },
+        { "letter": "C", "text": "Bắc Băng Dương" },
+        { "letter": "D", "text": "Thái Bình Dương" }
+      ],
+      "answer": "D",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Tác giả của Truyện Kiều là ai?",
+      "choices": [
+        { "letter": "A", "text": "Nguyễn Du" },
+        { "letter": "B", "text": "Nam Cao" },
+        { "letter": "C", "text": "Tô Hoài" },
+        { "letter": "D", "text": "Nguyễn Nhật Ánh" }
+      ],
+      "answer": "A",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Thiết bị nào dùng để đo nhiệt độ?",
+      "choices": [
+        { "letter": "A", "text": "Đồng hồ" },
+        { "letter": "B", "text": "Nhiệt kế" },
+        { "letter": "C", "text": "Kính lúp" },
+        { "letter": "D", "text": "La bàn" }
+      ],
+      "answer": "B",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Khí nào cây xanh hấp thụ trong quá trình quang hợp?",
+      "choices": [
+        { "letter": "A", "text": "Oxy" },
+        { "letter": "B", "text": "Nitơ" },
+        { "letter": "C", "text": "Carbon dioxide" },
+        { "letter": "D", "text": "Hydro" }
+      ],
+      "answer": "C",
+      "explanation": "Cây xanh hấp thụ CO2 và giải phóng oxy khi quang hợp.",
+      "points": 1
+    },
+    {
+      "type": "mcq",
+      "content": "Nếu một lớp có 5 tổ, mỗi tổ 6 học sinh, cả lớp có bao nhiêu học sinh?",
+      "choices": [
+        { "letter": "A", "text": "11" },
+        { "letter": "B", "text": "25" },
+        { "letter": "C", "text": "30" },
+        { "letter": "D", "text": "36" }
+      ],
+      "answer": "C",
+      "explanation": "5 x 6 = 30 học sinh.",
+      "points": 1
+    }
+  ]
+}

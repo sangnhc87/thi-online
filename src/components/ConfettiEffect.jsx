@@ -1,19 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 // Lightweight canvas confetti for celebrations
 export default function ConfettiEffect({ active = false, duration = 3000 }) {
     const canvasRef = useRef(null);
-    const [running, setRunning] = useState(false);
 
     useEffect(() => {
-        if (!active) return;
-        setRunning(true);
-        const timer = setTimeout(() => setRunning(false), duration);
-        return () => clearTimeout(timer);
-    }, [active, duration]);
-
-    useEffect(() => {
-        if (!running || !canvasRef.current) return;
+        if (!active || !canvasRef.current) return;
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
@@ -69,9 +61,9 @@ export default function ConfettiEffect({ active = false, duration = 3000 }) {
 
         animate();
         return () => cancelAnimationFrame(animId);
-    }, [running]);
+    }, [active, duration]);
 
-    if (!running) return null;
+    if (!active) return null;
 
     return (
         <canvas

@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { buildUserSearchFields } from '../utils/search';
+import { hasTeacherWorkspaceAccess, isTeacherPaidPlan as hasPaidTeacherPlan } from '../utils/teacherPlan';
 
 const AuthContext = createContext(null);
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
@@ -26,22 +28,7 @@ export function AuthProvider({ children }) {
     const [userProfile, setUserProfile] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            if (firebaseUser) {
-                setUser(firebaseUser);
-                const profile = await getOrCreateProfile(firebaseUser);
-                setUserProfile(profile);
-            } else {
-                setUser(null);
-                setUserProfile(null);
-            }
-            setLoading(false);
-        });
-        return unsubscribe;
-    }, []);
-
-    const getOrCreateProfile = async (firebaseUser) => {
+    async function getOrCreateProfile(firebaseUser) {
         const ref = doc(db, 'users', firebaseUser.uid);
         const snap = await getDoc(ref);
 
@@ -77,10 +64,29 @@ export function AuthProvider({ children }) {
             achievements: [],
             lastActiveDate: '',
             createdAt: Timestamp.now(),
+            ...buildUserSearchFields({
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+            }),
         };
         await setDoc(ref, newProfile);
         return newProfile;
-    };
+    }
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                setUser(firebaseUser);
+                const profile = await getOrCreateProfile(firebaseUser);
+                setUserProfile(profile);
+            } else {
+                setUser(null);
+                setUserProfile(null);
+            }
+            setLoading(false);
+        });
+        return unsubscribe;
+    }, []);
 
     const refreshProfile = useCallback(async () => {
         if (!user) return null;
@@ -105,20 +111,9 @@ export function AuthProvider({ children }) {
     };
     const logout = () => signOut(auth);
 
-    // Subscription helpers
-    const isSubscriptionActive = () => {
-        if (!userProfile) return false;
-        if (userProfile.role === 'admin') return true;
-        if (userProfile.role !== 'teacher') return false;
-        const status = userProfile.teacherStatus;
-        if (status === 'trial') return true;
-        if (status === 'active') {
-            if (!userProfile.subscriptionEnd) return false;
-            const endDate = userProfile.subscriptionEnd.toDate ? userProfile.subscriptionEnd.toDate() : new Date(userProfile.subscriptionEnd);
-            return endDate > new Date();
-        }
-        return false;
-    };
+    // Teacher plan helpers
+    const isSubscriptionActive = () => hasTeacherWorkspaceAccess(userProfile);
+    const isPaidTeacherPlan = () => hasPaidTeacherPlan(userProfile);
 
     const value = {
         user,
@@ -131,6 +126,7 @@ export function AuthProvider({ children }) {
         isTeacher: userProfile?.role === 'teacher' || userProfile?.role === 'admin',
         isAdmin: userProfile?.role === 'admin',
         isSubscriptionActive,
+        isPaidTeacherPlan,
         generateSlug,
     };
 

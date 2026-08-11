@@ -1,25 +1,44 @@
 // Simple sound effects using Web Audio API (no files needed)
 let audioCtx = null;
+let masterMuted = false;
+let masterVolume = 1;
 
 function getAudioCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     return audioCtx;
 }
 
+function getEffectiveVolume(volume = 0.3) {
+    if (masterMuted) return 0;
+    return Math.max(0, Math.min(1, volume * masterVolume));
+}
+
+export function configureSoundEngine({ muted = false, volume = 1 } = {}) {
+    masterMuted = Boolean(muted);
+    masterVolume = Math.max(0, Math.min(1, Number(volume) || 0));
+}
+
+export function resetSoundEngine() {
+    masterMuted = false;
+    masterVolume = 1;
+}
+
 function playTone(freq, duration = 0.15, type = 'sine', volume = 0.3) {
     try {
+        const effectiveVolume = getEffectiveVolume(volume);
+        if (effectiveVolume <= 0) return;
         const ctx = getAudioCtx();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = type;
         osc.frequency.setValueAtTime(freq, ctx.currentTime);
-        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.setValueAtTime(effectiveVolume, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + duration);
-    } catch (e) { /* silent fail on browsers blocking audio */ }
+    } catch { /* silent fail on browsers blocking audio */ }
 }
 
 export function playCorrect() {

@@ -2,52 +2,413 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function currentRole() {
+      return signedIn() ? currentUser().role : null;
+    }
+
+    function isAdmin() {
+      return signedIn() && currentRole() == 'admin';
+    }
+
+    function isTeacher() {
+      return signedIn() && currentRole() == 'teacher';
+    }
+
+    function isStudent() {
+      return signedIn() && currentRole() == 'student';
+    }
+
+    function currentTeacherId() {
+      return signedIn() ? currentUser().teacherId : null;
+    }
+
+    function isBlockedStudent() {
+      return signedIn() && currentUser().blocked == true;
+    }
+
+    function teacherHasLegacyCatalogAccess() {
+      return isTeacher() && !(currentUser().accessPackageType is string);
+    }
+
+    function teacherHasFullCatalogAccess() {
+      return isAdmin()
+        || (isTeacher() && (
+          teacherHasLegacyCatalogAccess()
+          || currentUser().accessPackageType == 'full_catalog'
+        ));
+    }
+
+    function currentApprovedSubjects() {
+      return isTeacher() && currentUser().approvedSubjects is list
+        ? currentUser().approvedSubjects
+        : [];
+    }
+
+    function currentApprovedGrades() {
+      return isTeacher() && currentUser().approvedGrades is list
+        ? currentUser().approvedGrades
+        : [];
+    }
+
+    function canReadCatalogByTaxonomy(data) {
+      return isAdmin()
+        || (isTeacher() && (
+          teacherHasFullCatalogAccess()
+          || (
+            data.subject is string
+            && data.grade is string
+            && data.subject in currentApprovedSubjects()
+            && data.grade in currentApprovedGrades()
+          )
+        ));
+    }
+
+    function canReadSharedExamData(data) {
+      return signedIn()
+        && data.published == true
+        && canReadCatalogByTaxonomy(data);
+    }
+
+    function examDoc(examId) {
+      return get(/databases/$(database)/documents/exams/$(examId)).data;
+    }
+
+    function sharedExamDoc(sharedExamId) {
+      return get(/databases/$(database)/documents/sharedExams/$(sharedExamId)).data;
+    }
+
+    function canReadPublicTeacherProfile() {
+      // teacherSlug is only set on teacher documents — checking it alone is sufficient
+      // and allows the list query in TeacherPortal (no auth, no role filter) to work
+      return resource.data.teacherSlug is string;
+    }
+
+    function canAdminManageTeacherProfile() {
+      return isAdmin() && resource.data.role in ['teacher', 'pending_teacher', 'admin'];
+    }
+
+    function canReadUserProfile(userId) {
+      return request.auth.uid == userId
+        || canAdminManageTeacherProfile()
+        || (isTeacher() && resource.data.role == 'student' && resource.data.teacherId == request.auth.uid)
+        || (isTeacher() && resource.data.role == 'student' && resource.data.pendingTeacherId == request.auth.uid)
+        || (isStudent() && resource.data.role == 'teacher' && userId == currentTeacherId())
+        || (isStudent() && resource.data.role == 'student' && resource.data.teacherId == currentTeacherId());
+    }
+
+    function canTeacherManageStudent() {
+      return isTeacher()
+        && resource.data.role == 'student'
+        && (resource.data.teacherId == request.auth.uid
+            || resource.data.pendingTeacherId == request.auth.uid)
+        && request.resource.data.role == 'student'
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.photoURL == resource.data.photoURL
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function canReadExamAsSignedInUser() {
+      let user = currentUser();
+      return resource.data.teacherId == request.auth.uid
+        || (user.role == 'student' && resource.data.teacherId == user.teacherId);
+    }
+
+    function canReadExam() {
+      return resource.data.status == 'active'
+        || (signedIn() && canReadExamAsSignedInUser());
+    }
+
+    function canReadQuestions(examId) {
+      let user = currentUser();
+      let exam = examDoc(examId);
+      return exam.teacherId == request.auth.uid
+        || (user.role == 'student'
+          && user.blocked != true
+          && (user.teacherExpiry == null || user.teacherExpiry >= request.time)
+          && exam.status == 'active'
+          && exam.teacherId == user.teacherId);
+    }
+
+    function canReadSession() {
+      return signedIn() && (
+        isAdmin()
+        || resource.data.studentId == request.auth.uid
+        || resource.data.teacherId == request.auth.uid
+      );
+    }
+
+    function canCreateSession() {
+      let user = currentUser();
+      let exam = examDoc(request.resource.data.examId);
+      return user.role == 'student'
+        && user.blocked != true
+        && (user.teacherExpiry == null || user.teacherExpiry >= request.time)
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.teacherId == user.teacherId
+        && exam.status == 'active'
+        && exam.teacherId == user.teacherId;
+    }
+
+    function canReadBankItem(data) {
+      return signedIn() && (
+        (data.scope == 'private' && data.ownerId == request.auth.uid)
+        || (data.scope == 'system' && canReadCatalogByTaxonomy(data))
+      );
+    }
+
+    function canWriteBankItem(data) {
+      return signedIn() && (
+        (data.scope == 'private' && data.ownerId == request.auth.uid && currentRole() in ['teacher', 'admin'])
+        || (data.scope == 'system' && isAdmin())
+      );
+    }
+
+    function bankSubmissionDoc(submissionId) {
+      return get(/databases/$(database)/documents/bankSubmissions/$(submissionId)).data;
+    }
+
+    function canReadBankSubmission(data) {
+      return signedIn() && (
+        isAdmin()
+        || data.submitterTeacherId == request.auth.uid
+      );
+    }
+
+    function canCreateBankSubmission() {
+      return signedIn()
+        && currentRole() in ['teacher', 'admin']
+        && request.resource.data.submitterTeacherId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.sharedExamId == null
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedById == null
+        && request.resource.data.reviewedByName == null
+        && request.resource.data.reviewNote == null;
+    }
+
+    function canReadTeacherPlanRequest(data) {
+      return signedIn() && (
+        isAdmin()
+        || data.teacherId == request.auth.uid
+      );
+    }
+
+    function canCreateTeacherPlanRequest() {
+      return isTeacher()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approvedMonths == null
+        && request.resource.data.approvedUntil == null
+        && request.resource.data.resolvedAt == null
+        && request.resource.data.resolvedById == null
+        && request.resource.data.resolvedByName == null
+        && request.resource.data.reviewNote == null;
+    }
 
     // User profiles
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && (
-        request.auth.uid == userId ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-        // Teachers can update their own students (block, remove)
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher'
-         && resource.data.teacherId == request.auth.uid)
+      // Extra clause: any signed-in user can read a doc where they are the pending teacher
+      // (needed for the list query `where('pendingTeacherId','==',uid)` — avoids nested get() in list context)
+      allow read: if canReadPublicTeacherProfile()
+        || (signedIn() && canReadUserProfile(userId))
+        || (signedIn() && resource.data.pendingTeacherId == request.auth.uid);
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && (
+        request.auth.uid == userId
+        || canAdminManageTeacherProfile()
+        || canTeacherManageStudent()
       );
     }
 
     // Exams collection
     match /exams/{examId} {
-      // Anyone authenticated can read active exams
-      allow read: if request.auth != null;
-      // Only teachers can create/update/delete their own exams
-      allow create: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
-      allow update, delete: if request.auth != null
-        && resource.data.teacherId == request.auth.uid;
+      allow read: if canReadExam();
+      allow create: if signedIn()
+        && currentRole() in ['teacher', 'admin']
+        && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && request.resource.data.teacherId == resource.data.teacherId;
 
       // Questions subcollection
       match /questions/{questionId} {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
+        allow read: if signedIn() && canReadQuestions(examId);
+        allow write: if signedIn()
+          && examDoc(examId).teacherId == request.auth.uid;
       }
     }
 
     // Quiz sessions (student attempts)
     match /sessions/{sessionId} {
-      // Students can read their own sessions
-      allow read: if request.auth != null
-        && resource.data.studentId == request.auth.uid;
-      // Teachers can read all sessions (for exam results pages)
-      allow read: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
-      // Students can create sessions
-      allow create: if request.auth != null
-        && request.resource.data.studentId == request.auth.uid;
-      // Students can update their own in-progress sessions
-      allow update: if request.auth != null
-        && resource.data.studentId == request.auth.uid;
+      allow read: if canReadSession();
+      allow create: if signedIn() && canCreateSession();
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && !isBlockedStudent();
+    }
+
+    match /classes/{classId} {
+      allow read: if signedIn() && (
+        request.auth.uid == classId
+        || currentTeacherId() == classId
+      );
+      allow write: if signedIn() && request.auth.uid == classId;
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if signedIn() && (
+        resource.data.teacherId == request.auth.uid
+        || resource.data.studentId == request.auth.uid
+      );
+      allow write: if signedIn() && (
+        resource.data.teacherId == request.auth.uid
+        || request.resource.data.studentId == request.auth.uid
+      );
+    }
+
+    match /teacherStats/{teacherId} {
+      allow read: if signedIn() && (isAdmin() || request.auth.uid == teacherId);
+      allow write: if signedIn() && (isAdmin() || request.auth.uid == teacherId);
+    }
+
+    match /studentStats/{studentId} {
+      allow read: if signedIn() && (
+        request.auth.uid == studentId
+        || isAdmin()
+        || get(/databases/$(database)/documents/users/$(studentId)).data.teacherId == request.auth.uid
+      );
+      allow write: if signedIn() && (
+        isAdmin()
+        || get(/databases/$(database)/documents/users/$(studentId)).data.teacherId == request.auth.uid
+      );
+    }
+
+    match /examStats/{examId} {
+      allow read: if signedIn() && (
+        isAdmin()
+        || examDoc(examId).teacherId == request.auth.uid
+      );
+      allow write: if signedIn() && (
+        isAdmin()
+        || examDoc(examId).teacherId == request.auth.uid
+      );
+    }
+
+    match /sharedExams/{sharedExamId} {
+      allow read: if canReadSharedExamData(resource.data);
+      allow create: if signedIn()
+        && isAdmin()
+        && request.resource.data.ownerAdminId == request.auth.uid;
+      allow update, delete: if signedIn()
+        && isAdmin()
+        && resource.data.ownerAdminId == request.auth.uid;
+
+      match /questions/{questionId} {
+        allow read: if canReadSharedExamData(sharedExamDoc(sharedExamId));
+        allow write: if signedIn()
+          && isAdmin()
+          && sharedExamDoc(sharedExamId).ownerAdminId == request.auth.uid;
+      }
+    }
+
+    match /adminPlaybooks/{adminId} {
+      allow read, write: if signedIn()
+        && isAdmin()
+        && request.auth.uid == adminId;
+    }
+
+    match /systemConfigs/{configId} {
+      allow read: if signedIn() && currentRole() in ['teacher', 'admin'];
+      allow write: if signedIn() && isAdmin();
+    }
+
+    match /bankItems/{bankItemId} {
+      allow read: if canReadBankItem(resource.data);
+      allow create: if canWriteBankItem(request.resource.data);
+      allow update: if canWriteBankItem(resource.data) && canWriteBankItem(request.resource.data);
+      allow delete: if canWriteBankItem(resource.data);
+    }
+
+    match /bankSubmissions/{submissionId} {
+      allow read: if canReadBankSubmission(resource.data);
+      allow create: if canCreateBankSubmission();
+      allow update, delete: if signedIn() && isAdmin();
+
+      match /questions/{questionId} {
+        allow read: if canReadBankSubmission(bankSubmissionDoc(submissionId));
+        allow create: if signedIn()
+          && currentRole() in ['teacher', 'admin']
+          && bankSubmissionDoc(submissionId).submitterTeacherId == request.auth.uid
+          && bankSubmissionDoc(submissionId).status == 'pending';
+        allow update, delete: if false;
+      }
+    }
+
+    match /teacherPlanRequests/{requestId} {
+      allow read: if canReadTeacherPlanRequest(resource.data);
+      allow create: if canCreateTeacherPlanRequest();
+      allow update: if signedIn()
+        && isAdmin()
+        && resource.data.status == 'pending';
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow create: if signedIn()
+        && currentRole() in ['teacher', 'admin']
+        && request.resource.data.actorId == request.auth.uid;
+      allow read: if signedIn() && (
+        resource.data.actorId == request.auth.uid
+        || resource.data.teacherId == request.auth.uid
+      );
+    }
+
+    // Live classroom rooms
+    // Teachers create/manage; students can read and update only their own participant/answer/readyCheck slots
+    match /liveRooms/{roomCode} {
+      allow read: if request.auth != null; // allow both registered and anonymous users
+      allow create: if isTeacher()
+        && request.resource.data.teacherId == request.auth.uid;
+      allow update: if
+        // Teacher who owns the room can update anything
+        (isTeacher() && resource.data.teacherId == request.auth.uid)
+        // Students (incl. anonymous) can only write to their own participant, answer, and readyCheck slots
+        || (signedIn()
+            && (
+              // Anonymous users have no user doc – allow them by default
+              !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              || !isBlockedStudent()
+            )
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['participants', 'answers', 'readyChecks']));
+      allow delete: if isTeacher() && resource.data.teacherId == request.auth.uid;
+
+      // Private answer key – only the owning teacher can read/write
+      match /private/{docId} {
+        allow read, write: if isTeacher()
+          && resource.data.teacherId == request.auth.uid;
+        // On create there is no resource yet – check request data
+        allow create: if isTeacher()
+          && request.resource.data.teacherId == request.auth.uid;
+      }
+    }
+
+    // Live session archives – written by teacher when closing room
+    match /liveSessions/{sessionId} {
+      allow read: if isTeacher()
+        && resource.data.teacherId == request.auth.uid;
+      allow create: if isTeacher();
+      allow update, delete: if false; // immutable archive
     }
   }
 }

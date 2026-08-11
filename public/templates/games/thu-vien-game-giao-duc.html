@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thu vien game giao duc</title>
+  <style>
+    :root {
+      --bg: #07101f;
+      --panel: rgba(9, 18, 38, 0.88);
+      --panel-soft: rgba(255,255,255,0.06);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --line: rgba(255,255,255,0.12);
+      --cyan: #67e8f9;
+      --gold: #facc15;
+      --teal: #2dd4bf;
+      --amber: #fb923c;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(34,211,238,0.12) 0%, transparent 24%),
+        radial-gradient(circle at top center, rgba(250,204,21,0.12) 0%, transparent 18%),
+        linear-gradient(180deg, #07101f 0%, #0c1f3d 56%, #0f2747 100%);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero,
+    .panel,
+    .card,
+    .callout,
+    pre {
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 52px rgba(2,6,23,0.28);
+    }
+
+    .hero {
+      padding: 30px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, rgba(8,47,73,0.96) 0%, rgba(17,94,89,0.94) 44%, rgba(29,78,216,0.94) 100%);
+      margin-bottom: 18px;
+    }
+
+    .eyebrow,
+    .chip,
+    .step-index {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    .eyebrow { color: rgba(255,255,255,0.76); }
+
+    .hero h1 {
+      margin: 10px 0 12px;
+      font-size: clamp(2rem, 4vw, 3.3rem);
+      line-height: 1.06;
+    }
+
+    .hero p,
+    .panel p,
+    .card p,
+    .callout p,
+    li,
+    td,
+    th { color: var(--text); }
+
+    .chip {
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      font-size: 0.8rem;
+      text-transform: none;
+      letter-spacing: 0;
+      margin: 4px 8px 0 0;
+    }
+
+    .grid,
+    .cards,
+    .two-col,
+    .steps,
+    .mode-grid,
+    .blueprint-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .cards,
+    .mode-grid,
+    .blueprint-grid,
+    .steps {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel {
+      padding: 22px;
+      border-radius: 24px;
+      background: var(--panel);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      margin-bottom: 16px;
+    }
+
+    .panel h2,
+    .panel h3,
+    .card h3,
+    .callout h3 {
+      margin: 0 0 8px;
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%);
+    }
+
+    .card strong,
+    .highlight,
+    code { color: var(--gold); }
+
+    .card small,
+    .muted { color: var(--muted); }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .tag-row span {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      color: rgba(248,250,252,0.92);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .status-live,
+    .status-playbook {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .status-live {
+      background: rgba(45,212,191,0.14);
+      color: #99f6e4;
+    }
+
+    .status-playbook {
+      background: rgba(251,146,60,0.14);
+      color: #fdba74;
+    }
+
+    .step {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+    }
+
+    .step-index {
+      width: 42px;
+      height: 42px;
+      justify-content: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
+      color: #fff;
+      margin-bottom: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow: hidden;
+      border-radius: 18px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--cyan);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .callout {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(21,128,61,0.18) 0%, rgba(8,145,178,0.18) 100%);
+      margin-top: 16px;
+    }
+
+    .link-row {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .link-row a {
+      color: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--line);
+    }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(2,6,23,0.72);
+      white-space: pre-wrap;
+      margin: 12px 0 0;
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+
+    li + li { margin-top: 8px; }
+
+    @media (max-width: 760px) {
+      .hero,
+      .panel,
+      .card,
+      .callout {
+        padding: 18px;
+        border-radius: 22px;
+      }
+
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Teaching Studio / Thu vien game giao duc</div>
+      <h1>Nhieu game hon, nhung van phai giu mot he thong van hanh chung</h1>
+      <p>Tai lieu nay khong chi liet ke y tuong game. No map game vao muc tieu day hoc, quy mo lop, loai cau hoi va engine hien co trong thi-online de viec mo rong sau nay khong bi manh ai nay lam.</p>
+      <div>
+        <span class="chip">5 live mode da co that</span>
+        <span class="chip">Nhieu playbook co the build ngay tren he thong hien tai</span>
+        <span class="chip">Uu tien: chon dung game theo muc tieu su pham</span>
+      </div>
+      <div class="link-row">
+        <a href="../millionaire/huong-dan-ai-la-trieu-phu.html">Mo guide Ai la trieu phu</a>
+        <a href="./mau-playbook-game-giao-duc.md">Mo mau playbook giao vien</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Nguyen tac xay kho game giao duc</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Game phai phuc vu mot muc tieu hoc tap ro</h3>
+          <p>Khong lam game vi thay vui mat. Moi format phai gan voi mot nhom muc tieu nhu warm-up, checkpoint, on thi, debrief, project-based hay tong ket.</p>
+        </div>
+        <div class="card">
+          <h3>Mot engine co the sinh nhieu game</h3>
+          <p>Classic live, speed, golden bell, millionaire va presentation la 5 engine. Tu do co the ke ra nhieu kịch bản day hoc khac nhau ma khong can doi data model.</p>
+        </div>
+        <div class="card">
+          <h3>Playbook quan trong hon icon</h3>
+          <p>Dieu giao vien can la: chon game nao, dung bao nhieu cau, loai cau gi, timer bao lau, scoring ra sao, ready check hay khong va debrief the nao.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. 5 mode da co that trong he thong</h2>
+      <div class="mode-grid">
+        <div class="card">
+          <div class="status-live">Live now</div>
+          <h3>Classic live</h3>
+          <p>Mode can bang nhat cho warm-up, checkpoint va exit ticket. Dung duoc MCQ, TF va short answer.</p>
+          <div class="tag-row"><span>5-12 cau</span><span>15-30 giay/cau</span><span>10-80 HS</span></div>
+        </div>
+        <div class="card">
+          <div class="status-live">Live now</div>
+          <h3>Dua toc do</h3>
+          <p>Hop cho speed drill, tu vung, cong thuc va goi tri nho nhanh. Stem phai gon va cue phai ro.</p>
+          <div class="tag-row"><span>5-10 cau</span><span>10-15 giay/cau</span><span>Warm-up</span></div>
+        </div>
+        <div class="card">
+          <div class="status-live">Live now</div>
+          <h3>Rung chuong vang</h3>
+          <p>Sai la bi loai. Rat hop cho on thi, chung ket chu de, tiet can phan hoa ro va tao cao trao thi dau.</p>
+          <div class="tag-row"><span>8-15 cau</span><span>Loai truc tiep</span><span>On thi</span></div>
+        </div>
+        <div class="card">
+          <div class="status-live">Live now</div>
+          <h3>Ai la trieu phu</h3>
+          <p>Flagship mode hien tai: ready check, lifeline, prize ladder, BXH realtime, top 3 va award stage.</p>
+          <div class="tag-row"><span>MCQ 100%</span><span>10-15 cau</span><span>Tiet tong ket</span></div>
+        </div>
+        <div class="card">
+          <div class="status-live">Live now</div>
+          <h3>Presentation</h3>
+          <p>Giao vien giu toan quyen dieu tiet, hien cau va lot dap an theo nhac do rieng. Tot cho chua bai va debrief.</p>
+          <div class="tag-row"><span>Khong cham diem</span><span>Moi dang cau</span><span>Debrief</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>3. Nhung game co the trien khai ngay tren nen tang hien co</h2>
+      <div class="blueprint-grid">
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Truy tim manh moi</h3>
+          <p>Build tren section + passage + presentation/live. Moi cum clue la mot section hoac mot bloc passage co nhiem vu rieng.</p>
+          <small>Hop cho STEM, Doc hieu, Lich su, Dia ly, KHTN.</small>
+        </div>
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Bingo tu vung / khai niem</h3>
+          <p>Build tren worksheet + classic/speed. Hoc sinh nghe cue, doi keyword tren bang va danh dau.</p>
+          <small>Hop cho Tieng Anh, Khoa hoc, khoi niem can hoc thuoc.</small>
+        </div>
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Doi dau lap luan</h3>
+          <p>Build tren presentation + rubric + portal lop. Hoc sinh bao ve quan diem ngan, giao vien cham nhanh theo rubric.</p>
+          <small>Hop cho Ngu van, GDCD, Social studies.</small>
+        </div>
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Tram hoat dong</h3>
+          <p>Build tren bank + worksheet + portal. Moi tram la mot bo cau / task ngan, hoc sinh di theo vong.</p>
+          <small>Hop cho day hoc nhom va tiet co nhieu nang luc khac nhau.</small>
+        </div>
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Image hunt / spot the error</h3>
+          <p>Build tren question co asset image. Hoc sinh tim diem sai, tim manh moi, tim thanh phan thieu.</p>
+          <small>Hop cho Sinh, Ly, Hoa, Cong nghe, Tieng Anh.</small>
+        </div>
+        <div class="card">
+          <div class="status-playbook">Playbook</div>
+          <h3>Story path / choose the next step</h3>
+          <p>Build tren section co dieu huong. Moi cau mo ra mot nhan thao luan tiep theo, dung cho tinh huong va case study.</p>
+          <small>Hop cho Y te, Kinh te, Tin hoc, GDCD, HN-NN.</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>4. Chon game nao cho muc tieu nao?</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Muc tieu</th>
+            <th>Game / mode de xuat</th>
+            <th>Cau truc goi y</th>
+            <th>Ghi chu van hanh</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Khoi dong dau gio</td>
+            <td>Dua toc do / Classic live</td>
+            <td>5-8 cau MCQ ngan</td>
+            <td>Uu tien pace nhanh, khong dat nang phan thuong.</td>
+          </tr>
+          <tr>
+            <td>Checkpoint giua bai</td>
+            <td>Classic live</td>
+            <td>6-10 cau, tron MCQ/TF/short answer</td>
+            <td>Day la cach check hieu bai can bang nhat.</td>
+          </tr>
+          <tr>
+            <td>On thi / phan hoa</td>
+            <td>Rung chuong vang / Ai la trieu phu</td>
+            <td>10-15 cau tang do kho</td>
+            <td>Can thong nhat tu dau la sai co bi loai hay khong.</td>
+          </tr>
+          <tr>
+            <td>Giai de / debrief</td>
+            <td>Presentation</td>
+            <td>Moi dang cau, co loi giai</td>
+            <td>Khong de xep hang lam hut thao luan.</td>
+          </tr>
+          <tr>
+            <td>Lam viec nhom / du an</td>
+            <td>Truy tim manh moi / tram hoat dong</td>
+            <td>3-5 cum clue, moi cum mot nhiem vu</td>
+            <td>Uu tien section, passage, cue va rubric debrief.</td>
+          </tr>
+          <tr>
+            <td>Tiet tong ket / su kien</td>
+            <td>Ai la trieu phu</td>
+            <td>12 cau, ready check, award stage</td>
+            <td>Tot nhat neu co top 3, chot thuong va chup man hinh cuoi.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>5. Mau quy trinh de them mot game moi ma khong bi vo he thong</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-index">01</div>
+          <h3>Chot muc tieu su pham</h3>
+          <p>Game moi phai tra loi duoc: no giup warm-up, checkpoint, on thi, debrief hay project-based learning?</p>
+        </div>
+        <div class="step">
+          <div class="step-index">02</div>
+          <h3>Quyet dinh dung engine cu hay can engine moi</h3>
+          <p>Neu game chi thay pacing, scoring va flow, uu tien build tren liveRooms hien co. Chi tao engine moi khi logic thuc su khac hang.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">03</div>
+          <h3>Chot input format va starter pack</h3>
+          <p>Moi game can co chuan go, file mau, vi du import-ready va HDSD rieng. Neu khong, giao vien se khen concept nhung khong dung duoc.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">04</div>
+          <h3>Chot man truoc tran va sau tran</h3>
+          <p>Ready check, lobby, reveal, leaderboard, award stage, debrief la mot phan cua san pham, khong chi la trang tri.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <h3>Ket luan thuc dung</h3>
+        <p>Neu uu tien la <span class="highlight">ra nhieu game nhanh ma van chac</span>, huong di dung la: giu 5 engine hien co lam loi, them playbook + template + stage flow cho tung nhom muc tieu, sau do moi tach ra thanh engine moi khi mot format da duoc dung lap di lap lai va co gia tri rieng.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>6. Checklist truoc khi giao mot game moi cho giao vien</h2>
+      <ol>
+        <li>Co file mau import-ready hoac playbook ro rang.</li>
+        <li>Co quy tac soan cau hoi va pacing goi y.</li>
+        <li>Co giai thich nen dung cho muc tieu day hoc nao.</li>
+        <li>Co lobby, ready, reveal, ranking hoac debrief phu hop.</li>
+        <li>Co man tong ket sau tran de giao vien ket thuc tiet hoc gon.</li>
+      </ol>
+    </section>
+  </main>
+</body>
+</html>

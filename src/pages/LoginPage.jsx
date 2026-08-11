@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Swal from 'sweetalert2';
+import { buildUserSearchFields } from '../utils/search';
 
 export default function LoginPage() {
     const { user, userProfile, loading, signInWithGoogle, refreshProfile } = useAuth();
@@ -37,25 +38,28 @@ export default function LoginPage() {
                 </div>
             );
         }
-        // Student role on main login → redirect to teacher login context
-        // They shouldn't be here, but if they are, show message
-        return (
-            <div className="login-page">
-                <motion.div className="login-card" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-                    <div className="login-header">
-                        <div className="login-logo">👋</div>
-                        <h1>Xin chào, {user.displayName}</h1>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Trang này dành cho giáo viên.</p>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
-                            Nếu bạn là <strong>học sinh</strong>, hãy truy cập link lớp học từ giáo viên của bạn.
-                        </p>
-                    </div>
-                    <button className="btn btn-outline" onClick={() => setStep('register')} style={{ width: '100%', marginTop: 12 }}>
-                        <i className="bi bi-person-workspace"></i> Tôi muốn đăng ký Giáo viên
-                    </button>
-                </motion.div>
-            </div>
-        );
+        if (userProfile.role === 'student' && step !== 'register') {
+            return (
+                <div className="login-page">
+                    <motion.div className="login-card" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+                        <div className="login-header">
+                            <div className="login-logo">👋</div>
+                            <h1>Xin chào, {user.displayName}</h1>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Trang này dành cho giáo viên.</p>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
+                                Nếu bạn là <strong>học sinh</strong>, hãy truy cập link lớp học từ giáo viên của bạn.
+                            </p>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
+                                Nếu bạn muốn dùng tài khoản này làm <strong>giáo viên</strong>, bấm nút bên dưới để gửi yêu cầu duyệt.
+                            </p>
+                        </div>
+                        <button className="btn btn-outline" onClick={() => setStep('register')} style={{ width: '100%', marginTop: 12 }}>
+                            <i className="bi bi-person-workspace"></i> Tôi muốn đăng ký Giáo viên
+                        </button>
+                    </motion.div>
+                </div>
+            );
+        }
     }
 
     const handleTeacherRegister = async () => {
@@ -65,6 +69,11 @@ export default function LoginPage() {
             await updateDoc(doc(db, 'users', user.uid), {
                 role: 'pending_teacher',
                 schoolName: schoolName.trim() || null,
+                ...buildUserSearchFields({
+                    email: user.email,
+                    displayName: user.displayName,
+                    schoolName: schoolName.trim() || null,
+                }),
             });
             await refreshProfile();
             Swal.fire({ icon: 'info', title: 'Đã gửi yêu cầu!', text: 'Quản trị viên sẽ duyệt tài khoản bạn.', confirmButtonColor: '#5b5ea6' });
@@ -79,11 +88,17 @@ export default function LoginPage() {
                 <div className="login-header">
                     <div className="login-logo">📝</div>
                     <h1>Thi Online</h1>
-                    <p>Nền tảng thi trắc nghiệm trực tuyến dành cho Giáo viên</p>
+                    <p>Workspace thi trực tuyến cho giáo viên: kho đề, portal lớp riêng và dashboard đủ đẹp để vận hành như một sản phẩm thật.</p>
                 </div>
 
                 {step === 'main' && (
                     <>
+                        <div className="login-badges">
+                            <span className="login-badge">Kho đề cá nhân</span>
+                            <span className="login-badge">Portal học sinh riêng</span>
+                            <span className="login-badge">Dashboard premium</span>
+                        </div>
+
                         <button className="btn-google" onClick={signInWithGoogle}>
                             <svg width="20" height="20" viewBox="0 0 48 48">
                                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -128,6 +143,9 @@ export default function LoginPage() {
                                         <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.displayName}</div>
                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{user.email}</div>
                                     </div>
+                                </div>
+                                <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                                    <i className="bi bi-info-circle"></i> Tài khoản này hiện đang ở vai trò học sinh. Sau khi gửi yêu cầu, hệ thống sẽ chuyển sang trạng thái chờ duyệt giáo viên.
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Tên trường / Tổ chức (không bắt buộc)</label>

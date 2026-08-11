@@ -46,7 +46,7 @@ const UMAP = {
     '°':'^{\\circ}',
     '√':'\\sqrt ','∠':'\\angle ',
     '⊥':'\\perp ','∥':'\\parallel ',
-    '←':'\\leftarrow ','↑':'\\uparrow ','↓':'\\downarrow ',
+    '↑':'\\uparrow ','↓':'\\downarrow ',
     '⟨':'\\langle ','⟩':'\\rangle ',
 };
 

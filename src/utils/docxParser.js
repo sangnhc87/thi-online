@@ -4,7 +4,15 @@
  * Compatible with tron-de-react DOCX format.
  */
 import JSZip from 'jszip';
-import { ommlToLatex, isDisplayMath } from './ommlToLatex';
+import { ommlToLatex } from './ommlToLatex';
+import {
+    buildSectionTag,
+    getSectionDisplayTitle,
+    getSectionSettings,
+    groupQuestionsBySection,
+    parseQuestionLine,
+    parseSectionTagLine,
+} from './examSections';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -22,6 +30,14 @@ function getAll(el, ns, tag) {
 }
 function getFirst(el, ns, tag) {
     return el ? el.getElementsByTagNameNS(ns, tag)[0] || null : null;
+}
+
+function escapeAttr(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 // ====== Flatten paragraph children (unwrap mc:AlternateContent, w:ins, w:del, w:sdt, etc.) ======
@@ -83,16 +99,19 @@ function getParaText(pEl) {
         if (child.nodeType !== 1) continue;
         const ln = child.localName;
         if (ln === 'r' && child.namespaceURI === W_NS) {
+            // w:tab elements inside run → emit a space to avoid words running together
+            if (child.getElementsByTagNameNS(W_NS, 'tab').length > 0) text += ' ';
             for (const t of getAll(child, W_NS, 't')) text += t.textContent;
         } else if (ln === 'hyperlink') {
             for (const r of getAll(child, W_NS, 'r'))
                 for (const t of getAll(r, W_NS, 't')) text += t.textContent;
         } else if ((ln === 'oMath' || ln === 'oMathPara') && child.namespaceURI === M_NS) {
             const latex = ommlToLatex(child);
-            if (latex) text += (ln === 'oMathPara' ? ` $$$${latex}$$$ ` : ` $$${latex}$$ `);
+            if (latex) text += (ln === 'oMathPara' ? ` \\[${latex}\\] ` : ` \\(${latex}\\) `);
         }
     }
-    return text.trim();
+    // Normalize: raw tabs → space, non-breaking space → space, collapse multiple spaces
+    return text.replace(/\t/g, ' ').replace(/\u00A0/g, ' ').replace(/ {2,}/g, ' ').trim();
 }
 
 // ====== Check if paragraph has underline ======
@@ -110,7 +129,7 @@ function hasUnderline(pEl) {
 }
 
 // ====== Convert paragraph to HTML ======
-function paraToHtml(pEl, imageMap) {
+function paraToHtml(pEl, imageMap, relsMap) {
     const parts = [];
     for (const child of flattenParaChildren(pEl)) {
         if (child.nodeType !== 1) continue;
@@ -137,10 +156,11 @@ function paraToHtml(pEl, imageMap) {
                 }
             }
 
-            // Text
+            // Text — handle w:tab (tab stop) inside run as a space
             let runText = '';
+            if (child.getElementsByTagNameNS(W_NS, 'tab').length > 0) runText += ' ';
             for (const t of getAll(child, W_NS, 't')) {
-                runText += t.textContent;
+                runText += t.textContent.replace(/\u00A0/g, ' ');
             }
 
             // Images inside run (w:drawing)
@@ -174,20 +194,34 @@ function paraToHtml(pEl, imageMap) {
 
             if (runText) parts.push(prefix + escapeHtml(runText).replace(/&lt;img /g, '<img ').replace(/&lt;\/img&gt;/g, '') + suffix);
         } else if (localName === 'hyperlink') {
-            // Process runs inside hyperlink
+            const relId = child.getAttributeNS(R_NS, 'id') || child.getAttribute('r:id') || '';
+            const anchor = child.getAttributeNS(W_NS, 'anchor') || child.getAttribute('w:anchor') || '';
+            const href = relId && relsMap?.[relId]
+                ? relsMap[relId]
+                : anchor
+                    ? `#${anchor}`
+                    : '';
+            let linkHtml = '';
             for (const r of getAll(child, W_NS, 'r')) {
                 let t = '';
                 for (const tEl of getAll(r, W_NS, 't')) t += tEl.textContent;
-                parts.push(escapeHtml(t));
+                linkHtml += escapeHtml(t);
+            }
+            if (href) {
+                const target = href.startsWith('#') ? '_self' : '_blank';
+                const rel = href.startsWith('#') ? '' : ' rel="noreferrer noopener"';
+                parts.push(`<a href="${escapeAttr(href)}" class="docx-import-link" target="${target}"${rel}>${linkHtml || escapeHtml(href)}</a>`);
+            } else if (linkHtml) {
+                parts.push(linkHtml);
             }
         } else if ((localName === 'oMath' || localName === 'oMathPara') && child.namespaceURI === M_NS) {
             // OMML equation → LaTeX
             const latex = ommlToLatex(child);
             if (latex) {
                 if (localName === 'oMathPara') {
-                    parts.push(`$$$${latex}$$$`);
+                    parts.push(`\\[${latex}\\]`);
                 } else {
-                    parts.push(`$$${latex}$$`);
+                    parts.push(`\\(${latex}\\)`);
                 }
             }
         }
@@ -245,12 +279,11 @@ export async function parseDocx(file) {
     const paragraphs = allP.map(p => ({
         el: p,
         text: getParaText(p),
-        html: paraToHtml(p, imageMap),
+        html: paraToHtml(p, imageMap, relsMap),
         underline: hasUnderline(p),
     }));
 
     // 5. Parse questions
-    const questionPattern = /^(?:Câu|Question|Q)\s*(\d+)\s*[.:)]\s*(.*)/is;
     const mcqPattern = /^([A-D])\s*[.)]\s*(.*)/s;
     const tfPattern = /^([a-d])\s*\)\s*(.*)/s;
     const answerPattern = /^(?:Đáp án|ĐÁ|Answer|Correct)\s*[:=]\s*(.*)/i;
@@ -259,6 +292,14 @@ export async function parseDocx(file) {
     const questions = [];
     let current = null;
     let collectingExplanation = false;
+    let currentSection = null;
+    let sectionCount = 0;
+
+    const appendContext = (section, text, html) => {
+        if (!section) return;
+        section.contextText = [section.contextText, text].filter(Boolean).join('\n').trim();
+        section.contextHtml = [section.contextHtml, html].filter(Boolean).join('<br>').trim();
+    };
 
     const finalizeQuestion = (q) => {
         if (!q) return;
@@ -285,12 +326,42 @@ export async function parseDocx(file) {
 
         // Clean internal fields
         q.choices.forEach(c => { delete c.format; delete c.underline; });
+        if (q.sectionTag) {
+            q.sectionTitle = q.sectionTitle || getSectionDisplayTitle(q);
+        }
         questions.push(q);
     };
 
     for (const para of paragraphs) {
         const { text, html, underline } = para;
         if (!text) continue;
+
+        const tagInfo = parseSectionTagLine(text);
+        if (tagInfo?.type === 'start') {
+            finalizeQuestion(current);
+            current = null;
+            collectingExplanation = false;
+            sectionCount += 1;
+            currentSection = {
+                id: `section-${sectionCount}`,
+                order: sectionCount,
+                tag: tagInfo.tag,
+                contextText: '',
+                contextHtml: '',
+                ...getSectionSettings(tagInfo.tag),
+            };
+            continue;
+        }
+
+        if (tagInfo?.type === 'end') {
+            finalizeQuestion(current);
+            current = null;
+            collectingExplanation = false;
+            currentSection = null;
+            continue;
+        }
+
+        const parsedQuestion = parseQuestionLine(text);
 
         // Explanation
         const explMatch = text.match(explPattern);
@@ -304,7 +375,7 @@ export async function parseDocx(file) {
         }
 
         if (collectingExplanation && current) {
-            if (questionPattern.test(text) || mcqPattern.test(text) || tfPattern.test(text)) {
+            if (parsedQuestion || mcqPattern.test(text) || tfPattern.test(text)) {
                 collectingExplanation = false;
                 // fall through
             } else {
@@ -322,19 +393,36 @@ export async function parseDocx(file) {
         }
 
         // New question
-        const qMatch = text.match(questionPattern);
-        if (qMatch) {
+        if (parsedQuestion) {
             finalizeQuestion(current);
             collectingExplanation = false;
-            const qHtml = html.replace(/^(?:Câu|Question|Q)\s*\d+\s*[.:)]\s*/i, '');
+            const qHtml = html
+                .replace(/^(?:Câu|Question|Q)\s*\d+\s*[.:)]\s*/i, '')
+                .replace(/^\(Q\d+\)\s*/i, '');
             current = {
-                number: parseInt(qMatch[1]),
-                content_text: qMatch[2].trim(),
+                number: parsedQuestion.number,
+                content_text: parsedQuestion.content,
                 content_html: qHtml,
                 choices: [],
                 correct_answer: null,
                 explanation: null,
                 explanation_html: null,
+                ...(currentSection ? {
+                    sectionId: currentSection.id,
+                    sectionOrder: currentSection.order,
+                    sectionTag: currentSection.tag,
+                    sectionTitle: getSectionDisplayTitle({
+                        type: 'mcq',
+                        sectionTag: currentSection.tag,
+                        sectionContextText: currentSection.contextText,
+                    }),
+                    sectionContextText: currentSection.contextText,
+                    sectionContextHtml: currentSection.contextHtml,
+                    sectionShuffleQuestions: currentSection.shuffleQuestions,
+                    sectionShuffleChoices: currentSection.shuffleChoices,
+                    sectionFixedPosition: currentSection.fixedPosition,
+                    sectionQuestionLimit: currentSection.questionLimit,
+                } : {}),
             };
             continue;
         }
@@ -373,11 +461,22 @@ export async function parseDocx(file) {
         if (current && current.choices.length === 0 && !collectingExplanation) {
             current.content_text += '\n' + text;
             current.content_html += '<br>' + html;
+            continue;
+        }
+
+        if (currentSection && !current) {
+            appendContext(currentSection, text, html);
         }
     }
     finalizeQuestion(current);
 
-    return { questions, imageFiles, imageMap };
+    const warnings = [];
+    const sectionGroups = groupQuestionsBySection(questions).filter((group) => group.meta.explicit);
+    if (sectionGroups.length > 0) {
+        warnings.push(`Phat hien ${sectionGroups.length} nhom cau hoi co cau truc de Tieng Anh / theo phan.`);
+    }
+
+    return { questions, imageFiles, imageMap, warnings };
 }
 
 function blobToDataURL(blob) {
@@ -390,21 +489,37 @@ function blobToDataURL(blob) {
 
 // ====== Serialize questions → plain text ======
 export function questionsToText(questions) {
-    return questions.map(q => {
-        const lines = [`Câu ${q.number}: ${q.content_text || ''}`];
-        for (const c of (q.choices || [])) {
-            const pfx = q.type === 'tf' ? `${c.letter})` : `${c.letter}.`;
-            lines.push(`${pfx} ${c.text || ''}`);
+    const groups = groupQuestionsBySection(questions);
+    const blocks = [];
+
+    groups.forEach((group) => {
+        const firstQuestion = group.questions[0];
+        if (group.meta.explicit && firstQuestion?.sectionTag) {
+            blocks.push(`<${buildSectionTag(firstQuestion)}>`);
+            if (firstQuestion.sectionContextText) blocks.push(firstQuestion.sectionContextText);
         }
-        if (q.correct_answer) lines.push(`Đáp án: ${q.correct_answer}`);
-        if (q.explanation) lines.push(`Lời giải: ${q.explanation}`);
-        return lines.join('\n');
-    }).join('\n\n');
+
+        group.questions.forEach((question) => {
+            const lines = [`Câu ${question.number}: ${question.content_text || ''}`];
+            for (const choice of (question.choices || [])) {
+                const prefix = question.type === 'tf' ? `${choice.letter})` : `${choice.letter}.`;
+                lines.push(`${prefix} ${choice.text || ''}`);
+            }
+            if (question.correct_answer) lines.push(`Đáp án: ${question.correct_answer}`);
+            if (question.explanation) lines.push(`Lời giải: ${question.explanation}`);
+            blocks.push(lines.join('\n'));
+        });
+
+        if (group.meta.explicit && firstQuestion?.sectionTag) {
+            blocks.push(`</${buildSectionTag(firstQuestion)}>`);
+        }
+    });
+
+    return blocks.join('\n\n');
 }
 
 // ====== Parse plain text → questions ======
 export function parseText(text) {
-    const qPat = /^(?:Câu|Question|Q)\s*(\d+)\s*[.:)]\s*(.*)/i;
     const mcqPat = /^([A-D])\s*[.)]\s*(.*)/;
     const tfPat = /^([a-d])\s*\)\s*(.*)/;
     const ansPat = /^(?:Đáp án|ĐÁ|Answer|Correct)\s*[:=]\s*(.*)/i;
@@ -414,6 +529,14 @@ export function parseText(text) {
     const lines = text.split('\n');
     const questions = [];
     let cur = null, collectExpl = false;
+    let currentSection = null;
+    let sectionCount = 0;
+
+    const appendSectionContext = (section, line) => {
+        if (!section || !line) return;
+        section.contextText = [section.contextText, line].filter(Boolean).join('\n').trim();
+        section.contextHtml = esc(section.contextText);
+    };
 
     const finalize = () => {
         if (!cur) return;
@@ -426,6 +549,9 @@ export function parseText(text) {
         cur.content_html = esc(cur.content_text);
         cur.choices.forEach(c => { c.html = esc(c.text); delete c._f; });
         if (cur.explanation) cur.explanation_html = esc(cur.explanation);
+        if (cur.sectionTag) {
+            cur.sectionTitle = cur.sectionTitle || getSectionDisplayTitle(cur);
+        }
         questions.push(cur);
     };
 
@@ -433,21 +559,70 @@ export function parseText(text) {
         const t = line.trim();
         if (!t) continue;
 
+        const tagInfo = parseSectionTagLine(t);
+        if (tagInfo?.type === 'start') {
+            finalize();
+            cur = null;
+            collectExpl = false;
+            sectionCount += 1;
+            currentSection = {
+                id: `section-${sectionCount}`,
+                order: sectionCount,
+                tag: tagInfo.tag,
+                contextText: '',
+                contextHtml: '',
+                ...getSectionSettings(tagInfo.tag),
+            };
+            continue;
+        }
+
+        if (tagInfo?.type === 'end') {
+            finalize();
+            cur = null;
+            collectExpl = false;
+            currentSection = null;
+            continue;
+        }
+
+        const parsedQuestion = parseQuestionLine(t);
+
         if (explPat.test(t) && cur) {
             cur.explanation = t.match(explPat)[1].trim();
             collectExpl = true; continue;
         }
         if (collectExpl && cur) {
-            if (qPat.test(t)) { collectExpl = false; }
+            if (parsedQuestion) { collectExpl = false; }
             else { cur.explanation = ((cur.explanation || '') + '\n' + t).trim(); continue; }
         }
         const ansM = t.match(ansPat);
         if (ansM && cur) { cur.correct_answer = ansM[1].trim(); continue; }
 
-        const qM = t.match(qPat);
-        if (qM) {
+        if (parsedQuestion) {
             finalize(); collectExpl = false;
-            cur = { number: parseInt(qM[1]), content_text: qM[2].trim(), content_html: '', choices: [], correct_answer: null, explanation: null, explanation_html: null };
+            cur = {
+                number: parsedQuestion.number,
+                content_text: parsedQuestion.content,
+                content_html: '',
+                choices: [],
+                correct_answer: null,
+                explanation: null,
+                explanation_html: null,
+                ...(currentSection ? {
+                    sectionId: currentSection.id,
+                    sectionOrder: currentSection.order,
+                    sectionTag: currentSection.tag,
+                    sectionTitle: getSectionDisplayTitle({
+                        sectionTag: currentSection.tag,
+                        sectionContextText: currentSection.contextText,
+                    }),
+                    sectionContextText: currentSection.contextText,
+                    sectionContextHtml: currentSection.contextHtml,
+                    sectionShuffleQuestions: currentSection.shuffleQuestions,
+                    sectionShuffleChoices: currentSection.shuffleChoices,
+                    sectionFixedPosition: currentSection.fixedPosition,
+                    sectionQuestionLimit: currentSection.questionLimit,
+                } : {}),
+            };
             continue;
         }
         const mcqM = t.match(mcqPat);
@@ -456,6 +631,7 @@ export function parseText(text) {
         if (tfM && cur) { cur.choices.push({ letter: tfM[1].toLowerCase(), text: tfM[2].trim(), html: '', _f: 'tf' }); continue; }
 
         if (cur && cur.choices.length === 0 && !collectExpl) cur.content_text += '\n' + t;
+        else if (currentSection && !cur) appendSectionContext(currentSection, t);
     }
     finalize();
     return questions;

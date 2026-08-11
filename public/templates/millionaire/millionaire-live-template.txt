@@ -1,0 +1,88 @@
+Câu 1: Thủ đô của Việt Nam là thành phố nào?
+A. Huế
+B. Hà Nội
+C. Đà Nẵng
+D. Cần Thơ
+Đáp án: B
+Lời giải: Hà Nội là thủ đô của Việt Nam.
+
+Câu 2: Hành tinh nào thường được gọi là Hành tinh Đỏ?
+A. Sao Kim
+B. Sao Hỏa
+C. Sao Mộc
+D. Sao Thủy
+Đáp án: B
+Lời giải: Sao Hỏa có bề mặt màu đỏ do giàu oxit sắt.
+
+Câu 3: Công thức hóa học của nước là gì?
+A. CO2
+B. O2
+C. H2O
+D. NaCl
+Đáp án: C
+
+Câu 4: 9 x 7 bằng bao nhiêu?
+A. 56
+B. 63
+C. 72
+D. 81
+Đáp án: B
+
+Câu 5: Trong tam giác, tổng ba góc bằng bao nhiêu độ?
+A. 90 độ
+B. 180 độ
+C. 270 độ
+D. 360 độ
+Đáp án: B
+
+Câu 6: Cơ quan nào trong cơ thể người có chức năng bơm máu?
+A. Gan
+B. Phổi
+C. Tim
+D. Thận
+Đáp án: C
+
+Câu 7: Ngôn ngữ đánh dấu cơ bản để tạo cấu trúc trang web là gì?
+A. HTML
+B. CSS
+C. SQL
+D. Excel
+Đáp án: A
+Lời giải: HTML tạo cấu trúc, CSS lo giao diện và JS lo hành vi.
+
+Câu 8: Đại dương lớn nhất trên Trái Đất là đại dương nào?
+A. Đại Tây Dương
+B. Ấn Độ Dương
+C. Bắc Băng Dương
+D. Thái Bình Dương
+Đáp án: D
+
+Câu 9: Tác giả của Truyện Kiều là ai?
+A. Nguyễn Du
+B. Nam Cao
+C. Tô Hoài
+D. Nguyễn Nhật Ánh
+Đáp án: A
+
+Câu 10: Thiết bị nào dùng để đo nhiệt độ?
+A. Đồng hồ
+B. Nhiệt kế
+C. Kính lúp
+D. La bàn
+Đáp án: B
+
+Câu 11: Khí nào cây xanh hấp thụ trong quá trình quang hợp?
+A. Oxy
+B. Nitơ
+C. Carbon dioxide
+D. Hydro
+Đáp án: C
+Lời giải: Cây xanh hấp thụ CO2 và giải phóng oxy khi quang hợp.
+
+Câu 12: Nếu một lớp có 5 tổ, mỗi tổ 6 học sinh, cả lớp có bao nhiêu học sinh?
+A. 11
+B. 25
+C. 30
+D. 36
+Đáp án: C
+Lời giải: 5 x 6 = 30 học sinh.

@@ -1,18 +1,22 @@
-FROM python:3.12-slim
+FROM cgr.dev/chainguard/python:latest-dev
 
-# Install pandoc
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends pandoc && \
-    rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
+
+# Install pandoc runtime.
+RUN apk add --no-cache pandoc
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
 
-COPY app.py .
+COPY app.py ./app.py
 
-ENV PORT=8080
+USER nonroot
+
 EXPOSE 8080
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "120", "--workers", "2", "app:app"]
+CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "120", "--workers", "2", "app:app"]

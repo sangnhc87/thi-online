@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HDSD Ai la trieu phu</title>
+  <style>
+    :root {
+      --bg: #081226;
+      --panel: rgba(9, 18, 38, 0.86);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --gold: #facc15;
+      --amber: #f59e0b;
+      --line: rgba(255, 255, 255, 0.12);
+      --green: #4ade80;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top center, rgba(245, 158, 11, 0.18) 0%, transparent 22%),
+        linear-gradient(180deg, #07101f 0%, #0b1f3f 58%, #10284a 100%);
+      line-height: 1.7;
+    }
+
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .hero,
+    .panel,
+    .callout,
+    .card,
+    pre {
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 50px rgba(2, 6, 23, 0.28);
+    }
+
+    .hero {
+      padding: 28px;
+      border-radius: 28px;
+      background: linear-gradient(135deg, rgba(120, 53, 15, 0.92) 0%, rgba(8, 47, 73, 0.94) 100%);
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      margin: 8px 0 10px;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 1.05;
+    }
+
+    .eyebrow,
+    .pill,
+    .step-index {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    .eyebrow { color: rgba(255,255,255,0.74); }
+
+    .hero-grid,
+    .grid,
+    .two-col,
+    .steps,
+    .downloads,
+    .rule-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .downloads,
+    .rule-grid,
+    .steps {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .panel {
+      padding: 22px;
+      border-radius: 24px;
+      background: var(--panel);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      margin-bottom: 16px;
+    }
+
+    .panel h2,
+    .panel h3,
+    .card h3,
+    .callout h3 {
+      margin: 0 0 8px;
+    }
+
+    .downloads a,
+    .link-row a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%);
+    }
+
+    .card strong,
+    .highlight,
+    .panel code,
+    .callout strong {
+      color: var(--gold);
+    }
+
+    .pill {
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      color: rgba(248,250,252,0.9);
+      font-size: 0.8rem;
+      text-transform: none;
+      letter-spacing: 0;
+      margin: 4px 8px 0 0;
+    }
+
+    .step {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+    }
+
+    .step-index {
+      width: 42px;
+      height: 42px;
+      justify-content: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
+      color: #fff;
+      margin-bottom: 10px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(21, 128, 61, 0.18) 0%, rgba(8, 145, 178, 0.18) 100%);
+      margin-top: 14px;
+    }
+
+    .rule {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(103, 232, 249, 0.2);
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+
+    li + li { margin-top: 8px; }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(2, 6, 23, 0.72);
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      margin: 12px 0 0;
+    }
+
+    .muted { color: var(--muted); }
+    .link-row { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .link-row a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--line);
+    }
+
+    @media (max-width: 760px) {
+      .hero,
+      .panel,
+      .card,
+      .callout {
+        padding: 18px;
+        border-radius: 22px;
+      }
+
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Teaching Studio / HDSD chi tiet</div>
+      <h1>Ai la trieu phu live: chuan go, file mau va quy trinh van hanh</h1>
+      <p>Bo huong dan nay duoc viet de giao vien co the lam 3 viec nhanh: soan de dung chuan, import dung ngay, va van hanh tran live co ready check, top 3 va award stage ma khong phai doan format.</p>
+      <div>
+        <span class="pill">Tot nhat: 10-15 cau</span>
+        <span class="pill">Muon dung tron bo lifeline: uu tien 100% MCQ</span>
+        <span class="pill">Ready check truoc cau 1</span>
+        <span class="pill">Award stage tu dong lay top 3</span>
+      </div>
+      <div class="link-row">
+        <a href="./millionaire-live-template.txt">Mo TXT mau</a>
+        <a href="./millionaire-live-template.json">Mo JSON mau</a>
+        <a href="./millionaire-mau-cau-goi-y.md">Mo mau cau goi y</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Nen chon format nao?</h2>
+      <div class="downloads">
+        <a class="card" href="./millionaire-live-template.txt">
+          <h3>TXT import-ready</h3>
+          <p>Hop khi giao vien soan nhanh bang Word, Google Docs, Notepad hoac copy tu AI roi dan vao. Day la cach nhanh nhat de len tran live.</p>
+        </a>
+        <a class="card" href="./millionaire-live-template.json">
+          <h3>JSON import-ready</h3>
+          <p>Hop khi ban co he thong ngoai, script tao de, pipeline AI, hoac can dong bo du lieu co cau truc.</p>
+        </a>
+        <a class="card" href="./millionaire-mau-cau-goi-y.md">
+          <h3>Mau cau goi y</h3>
+          <p>Hop khi ban can bo khung stem, distractor va loi dan san khau de sua nhanh cho tung chu de.</p>
+        </a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. Chuan go TXT de import khong loi</h2>
+      <div class="rule-grid">
+        <div class="rule"><strong>Quy tac 1</strong><br />Moi cau bat dau bang <code>Câu X:</code> hoac <code>Question X:</code>.</div>
+        <div class="rule"><strong>Quy tac 2</strong><br />MCQ viet dung <code>A.</code>, <code>B.</code>, <code>C.</code>, <code>D.</code>.</div>
+        <div class="rule"><strong>Quy tac 3</strong><br />Dap an viet tren mot dong rieng: <code>Đáp án: B</code>.</div>
+        <div class="rule"><strong>Quy tac 4</strong><br />Neu can loi giai, viet them <code>Lời giải:</code> ngay sau dong dap an.</div>
+      </div>
+      <pre>Câu 1: Thủ đô của Việt Nam là thành phố nào?
+A. Huế
+B. Hà Nội
+C. Đà Nẵng
+D. Cần Thơ
+Đáp án: B
+Lời giải: Hà Nội là thủ đô của Việt Nam.</pre>
+      <div class="callout">
+        <h3>Chot nhanh</h3>
+        <p class="muted">Millionaire live van co the chay voi short answer, nhung cac lifeline <strong>50/50</strong>, <strong>Hoi khan gia</strong> va <strong>Chuyen gia</strong> chi hoat dong tren cau <strong>MCQ</strong>. Neu muon day du cam giac gameshow, hay uu tien 100% MCQ.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>3. Chuan JSON</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3>Khung toi thieu</h3>
+          <pre>{
+  "title": "Ten de",
+  "subject": "Mon hoc",
+  "duration": 20,
+  "questions": [
+    {
+      "type": "mcq",
+      "content": "Noi dung cau hoi",
+      "choices": [
+        { "letter": "A", "text": "Lua chon A" },
+        { "letter": "B", "text": "Lua chon B" },
+        { "letter": "C", "text": "Lua chon C" },
+        { "letter": "D", "text": "Lua chon D" }
+      ],
+      "answer": "A",
+      "explanation": "Tuy chon",
+      "points": 1
+    }
+  ]
+}</pre>
+        </div>
+        <div class="card">
+          <h3>Nhung loi JSON thuong gap</h3>
+          <ul>
+            <li>Khong co truong <code>questions</code> hoac <code>questions</code> rong.</li>
+            <li><code>answer</code> khong trung mot trong cac lua chon A/B/C/D.</li>
+            <li>Mot lua chon chi co <code>text</code> ma khong co <code>letter</code> ro rang.</li>
+            <li>Copy JSON tu Excel/Sheets nhung con dau phay thua.</li>
+          </ul>
+          <p class="muted">Parser hien tai da nhan <code>.json</code>, <code>.docx</code>, <code>.txt</code>, <code>.md</code>, <code>.xlsx/.xls</code> va <code>.tex</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>4. Quy trinh van hanh 1 tran live millionaire</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-index">01</div>
+          <h3>Soan de</h3>
+          <p>Soan 10-15 cau. Xep do kho tang dan. Cau 1-3 rat de, cau 4-8 bat dau phan hoa, cau 9 tro di moi nen kho ro.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">02</div>
+          <h3>Import va ra soat</h3>
+          <p>Import file, xem lai dap an, format, hinh anh va Khiên nhập đề. Neu thay cau nao khong du A/B/C/D thi sua truoc khi phat live.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">03</div>
+          <h3>Ready check</h3>
+          <p>Tu lobby, bam <strong>Ready check</strong>. Hoc sinh nhan nut xac nhan. Man host se hien bao nhieu em da san sang truoc khi vao cau 1.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">04</div>
+          <h3>Len san khau</h3>
+          <p>Khi vao tran, host co lifeline cockpit, HUD muc thuong, BXH thoi gian thuc va prize ladder. Hoc sinh thay stage HUD va cac lifeline da mo/khoa.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">05</div>
+          <h3>Khoa ket qua</h3>
+          <p>Sau moi cau, he thong reveal, tinh muc an toan va cap nhat BXH. Neu la cau non-MCQ, lifeline se tu dong bi khoa de tranh nham.</p>
+        </div>
+        <div class="step">
+          <div class="step-index">06</div>
+          <h3>Award stage</h3>
+          <p>Khi ket tran, host thay champion banner, podium top 3 va luoi award card. Hoc sinh cung thay top 3 cuoi tran tren man ca nhan.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>5. Ready check dung de lam gi?</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3>Cho giao vien</h3>
+          <ul>
+            <li>Biết số học sinh thực sự đã vào và đã nhìn màn hình.</li>
+            <li>Không phải đoán xem lớp đã ổn định chưa trước câu 1.</li>
+            <li>Dễ xử lý khi một nhóm học sinh vào trễ hoặc mạng vừa reconnect.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Cho hoc sinh</h3>
+          <ul>
+            <li>Co mot man hinh trung gian de kiem tra may, am thanh, wifi va tam ly vao tran.</li>
+            <li>Nhan nut la khoa trang thai ready, khong con cam giac bi bat dau dot ngot.</li>
+            <li>Nhìn thấy ai trong phòng đã xác nhận để cả lớp đồng bộ hơn.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>6. Top 3 va award stage</h2>
+      <div class="two-col">
+        <div class="card">
+          <h3>Host nhin thay gi?</h3>
+          <ul>
+            <li>Champion banner voi muc thuong chot duoc.</li>
+            <li>Podium top 3 de chup man hinh sau tran.</li>
+            <li>Danh sach BXH day du phia duoi de doi chieu ca lop.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Hoc sinh nhin thay gi?</h3>
+          <ul>
+            <li>Hạng cá nhân cuối trận.</li>
+            <li>Top 3 chung cuộc với tên, mốc đã chạm và phần thưởng chốt.</li>
+            <li>Neu hoc sinh nam trong top 3, card award se duoc nhan them.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>7. Loi thuong gap</h2>
+      <div class="downloads">
+        <div class="card">
+          <h3>Khong dung duoc 50/50</h3>
+          <p>Thuong do cau hien tai khong phai MCQ, hoac lifeline da duoc dung truoc do.</p>
+        </div>
+        <div class="card">
+          <h3>Import JSON bao loi</h3>
+          <p>Kiem tra lai ngoac, dau phay va dam bao file co truong <code>questions</code>.</p>
+        </div>
+        <div class="card">
+          <h3>Hoc sinh vao phong nhung ready = 0</h3>
+          <p>Ready check chi bat dau sau khi host bam nut o lobby. Truoc do he thong chua thu xac nhan.</p>
+        </div>
+        <div class="card">
+          <h3>Muon tran dep hon</h3>
+          <p>Uu tien 12 cau, 100% MCQ, 1-2 cau tinh huong o nhom giua va debrief o cuoi tran.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <h3>Checklist truoc gio len song</h3>
+        <ol>
+          <li>De da du A/B/C/D va dap an hop le.</li>
+          <li>Da import va xem lai tong quan tren trang upload.</li>
+          <li>Da vao live room va kiem tra co hoc sinh trong lobby.</li>
+          <li>Da bam ready check truoc khi vao cau 1.</li>
+          <li>Da thong nhat cach tinh thuong va cach chup award stage cuoi tran.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
